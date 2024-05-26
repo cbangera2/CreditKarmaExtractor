@@ -1,5 +1,13 @@
 # Credit Karma Transaction Extractor Chrome Extension
 
+![GitHub stars](https://img.shields.io/github/stars/cbangera2/CreditKarmaExtractor?style=social)
+![GitHub forks](https://img.shields.io/github/forks/cbangera2/CreditKarmaExtractor?style=social)
+![GitHub watchers](https://img.shields.io/github/watchers/cbangera2/CreditKarmaExtractor?style=social)
+![GitHub repo size](https://img.shields.io/github/repo-size/cbangera2/CreditKarmaExtractor)
+![GitHub language count](https://img.shields.io/github/languages/count/cbangera2/CreditKarmaExtractor)
+![GitHub top language](https://img.shields.io/github/languages/top/cbangera2/CreditKarmaExtractor)
+![GitHub last commit](https://img.shields.io/github/last-commit/cbangera2/CreditKarmaExtractor?color=red)
+
 The **Credit Karma Transaction Extractor** Chrome extension allows users to extract transaction data from Credit Karma and save it as a CSV file. This extension is particularly useful for users who need to analyze their financial transactions or import them into other financial management tools.
 
 ## Features
