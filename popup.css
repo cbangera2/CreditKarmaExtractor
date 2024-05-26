@@ -1,0 +1,31 @@
+body {
+    width: 300px;
+    padding: 10px;
+    font-family: Arial, sans-serif;
+}
+
+h1 {
+    font-size: 18px;
+}
+
+label, input, button {
+    display: block;
+    width: 100%;
+    margin: 5px 0;
+}
+
+button.green {
+    background-color: green;
+    color: white;
+    padding: 10px;
+    border: none;
+    cursor: pointer;
+}
+
+button.red {
+    background-color: red;
+    color: white;
+    padding: 10px;
+    border: none;
+    cursor: pointer;
+}
