@@ -44,10 +44,6 @@ To install and use the extension:
 - **No Data Extracted**: Ensure you are logged into Credit Karma and on the transactions page (`https://www.creditkarma.com/networth/transactions`).
 - **Errors**: If you encounter any errors, check the console for error messages or reload the extension.
 
-## License
-
-This project is licensed under the [MIT License](LICENSE).
-
 ## Credits
 
 - Developed by [Chirag Bangera](https://github.com/cbangera2).
