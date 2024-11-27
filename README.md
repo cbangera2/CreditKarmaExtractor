@@ -34,6 +34,8 @@ To install and use the extension:
    - Select a start and end month for the transactions you want to extract.
    - Click "Start Extraction" to begin extracting transactions.
    - Click "Stop Extraction" if you want to stop the extraction process.
+   - Will download 3 files (all_transactions.csv, expenses.csv, and income.csv)
+   - Import exported data to a budget tracker my favorite is linked here: [TMOAP V4.2](https://themeasureofaplan.com/budget-tracking-tool/)
 
 ## Screenshots
 
