@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Credit Karma Transactions Exporter",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Export transactions from Credit Karma within a specified date range.",
     "permissions": ["activeTab", "scripting"],
     "action": {

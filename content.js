@@ -122,8 +122,17 @@ async function captureTransactionsInDateRange(startDate, endDate) {
         return transactionDate >= new Date(startDate) && transactionDate <= new Date(endDate);
     });
     const csvData = convertToCSV(filteredTransactions);
-    saveCSVToFile(csvData, `transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
+    saveCSVToFile(csvData, `all_transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
     logResults(allTransactions, filteredTransactions, csvData);
+
+    const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
+    const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
+
+    const creditCsvData = convertToCSV(creditTransactions);
+    const debitCsvData = convertToCSV(debitTransactions);
+
+    saveCSVToFile(creditCsvData, `income_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
+    saveCSVToFile(debitCsvData, `expenses_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
 }
 
 // Listener for messages from the popup script
