@@ -36,6 +36,7 @@ To install and use the extension:
    - Click "Stop Extraction" if you want to stop the extraction process.
    - Will download 3 files (all_transactions.csv, expenses.csv, and income.csv)
    - Import exported data to a budget tracker my favorite is linked here: [TMOAP V4.2](https://themeasureofaplan.com/budget-tracking-tool/)
+   - Exported data is also supported in [BudgetLens](https://github.com/cbangera2/BudgetLens/) a GitHub project I made to visualize CreditKarma data
 
 ## Screenshots
 
