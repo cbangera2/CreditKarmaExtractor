@@ -15,6 +15,7 @@ The **Credit Karma Transaction Extractor** Chrome extension allows users to extr
 - **Date Range Extraction**: Users can specify a start and end month to extract transactions within a specific date range.
 - **CSV Export**: Extracted transactions are saved as CSV files, making it easy to analyze or import data into spreadsheets or financial software.
 - **User Interface**: Provides a simple popup interface with controls to start and stop extraction.
+- **BudgetLens Integration**: The exported CSV files are fully compatible with [BudgetLens](https://github.com/cbangera2/BudgetLens), a modern financial dashboard that provides powerful visualization and analysis of your Credit Karma transaction data.
 
 ## Installation
 
@@ -36,7 +37,7 @@ To install and use the extension:
    - Click "Stop Extraction" if you want to stop the extraction process.
    - Will download 3 files (all_transactions.csv, expenses.csv, and income.csv)
    - Import exported data to a budget tracker my favorite is linked here: [TMOAP V4.2](https://themeasureofaplan.com/budget-tracking-tool/)
-   - Exported data is also supported in [BudgetLens](https://github.com/cbangera2/BudgetLens/) a GitHub project I made to visualize CreditKarma data
+   - Use [BudgetLens](https://github.com/cbangera2/BudgetLens) to visualize and analyze your Credit Karma transaction data with an intuitive, modern dashboard interface
 
 ## Screenshots
 
@@ -46,6 +47,21 @@ To install and use the extension:
 
 - **No Data Extracted**: Ensure you are logged into Credit Karma and on the transactions page (`https://www.creditkarma.com/networth/transactions`).
 - **Errors**: If you encounter any errors, check the console for error messages or reload the extension.
+
+## TODO
+
+Future improvements planned for the extension:
+
+- **Dark Mode Support**: Add dark mode detection and filtering for better transaction extraction in dark mode
+- **Transaction Categories**: Add support for extracting and preserving Credit Karma's transaction categories
+- **Auto-Categorization**: Implement smart transaction categorization based on merchant names
+- **Export Format Options**: Support additional export formats beyond CSV (e.g., JSON, Excel)
+- **Real-time Progress**: Add a progress indicator during extraction
+- **Error Recovery**: Implement automatic retry mechanism for failed extractions
+- **Search & Filter**: Add ability to search and filter transactions before export
+- **Batch Processing**: Support for processing multiple date ranges in one go
+
+Feel free to contribute to any of these features or suggest new ones by creating an issue or pull request!
 
 ## Credits
 
