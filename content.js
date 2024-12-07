@@ -71,9 +71,9 @@ function filterEmptyTransactions(transactions) {
 }
 
 function convertToCSV(transactions) {
-    const header = 'Date,Description,Original Description,Amount,Category,Transaction Type,Account Name,Labels,Notes\n';
+    const header = 'Date,Description,Amount,Category,Transaction Type,Account Name,Labels,Notes\n';
     const rows = transactions.map(transaction =>
-        `"${convertDateFormat(transaction.date)}","${transaction.description}","${transaction.description}","${transaction.amount}","${transaction.category}","${transaction.transactionType}",,,\n`
+        `"${convertDateFormat(transaction.date)}","${transaction.description}","${transaction.amount}","${transaction.category}","${transaction.transactionType}",,,\n`
     );
     return header + rows.join('');
 }
