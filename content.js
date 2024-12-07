@@ -97,30 +97,51 @@ function scrollDown() {
 
 async function captureTransactionsInDateRange(startDate, endDate) {
     let allTransactions = [];
+    const startDateTime = new Date(startDate).getTime();
+    const endDateTime = new Date(endDate).getTime();
+    let lastTransactionCount = 0;
+    let unchangedCount = 0;
+    
     while (true) {
         const newTransactions = extractAllTransactions();
         allTransactions = combineTransactions(allTransactions, newTransactions);
-        const priorDateTransaction = newTransactions.find(transaction => {
-            const transactionDate = new Date(transaction.date);
-            return transactionDate < new Date(startDate);
+        
+        // Check if we've reached a date before our start date
+        const hasReachedPriorDate = newTransactions.some(transaction => {
+            const transactionDateTime = new Date(transaction.date).getTime();
+            return transactionDateTime < startDateTime;
         });
-        const postDateTransaction = newTransactions.find(transaction => {
-            const transactionDate = new Date(transaction.date);
-            return transactionDate > new Date(endDate);
-        });
-        if (priorDateTransaction || postDateTransaction) {
+        
+        // If we haven't gotten any new transactions in 3 attempts, break
+        if (newTransactions.length === lastTransactionCount) {
+            unchangedCount++;
+            if (unchangedCount >= 3) {
+                break;
+            }
+        } else {
+            unchangedCount = 0;
+        }
+        
+        lastTransactionCount = newTransactions.length;
+        
+        // Only break if we've reached a date before our start date
+        if (hasReachedPriorDate) {
             break;
         }
+        
         if (newTransactions.length === 0) {
             break;
         }
+        
         scrollDown();
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
+    
     const filteredTransactions = allTransactions.filter(transaction => {
-        const transactionDate = new Date(transaction.date);
-        return transactionDate >= new Date(startDate) && transactionDate <= new Date(endDate);
-    });
+        const transactionDateTime = new Date(transaction.date).getTime();
+        return transactionDateTime >= startDateTime && transactionDateTime <= endDateTime;
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
     const csvData = convertToCSV(filteredTransactions);
     saveCSVToFile(csvData, `all_transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
     logResults(allTransactions, filteredTransactions, csvData);
