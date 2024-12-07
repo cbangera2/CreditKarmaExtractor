@@ -66,10 +66,66 @@
         .footer a {
             color: #3f51b5;
             text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            transition: color 0.2s;
         }
 
         .footer a:hover {
-            text-decoration: underline;
+            color: #303f9f;
+        }
+
+        .footer-section {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .footer-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .footer-section h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin: 0 0 10px 0;
+            color: #444;
+        }
+
+        .footer-links {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .footer-meta {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .dark-mode .footer {
+            color: #ccc;
+        }
+
+        .dark-mode .footer a {
+            color: #7986cb;
+        }
+
+        .dark-mode .footer a:hover {
+            color: #9fa8da;
+        }
+
+        .dark-mode .footer-section {
+            border-bottom-color: #333;
+        }
+
+        .dark-mode .footer-section h3 {
+            color: #eee;
+        }
+
+        .dark-mode .footer-meta {
+            color: #999;
         }
 
         /* Dark mode styles */
@@ -94,14 +150,6 @@
 
         .dark-mode button:hover {
             background-color: #5c6bc0;
-        }
-
-        .dark-mode .footer {
-            color: #ccc;
-        }
-
-        .dark-mode .footer a {
-            color: #7986cb;
         }
 
         /* Theme switch styles */
@@ -190,9 +238,27 @@
     <button id="export-btn">Export</button>
 
     <div class="footer">
-        <p><a href="https://www.creditkarma.com/networth/transactions" target="_blank">Go to Credit Karma Transactions</a></p>
-        <p>&copy; 2024 Chirag Bangera. All rights reserved.</p>
-        <p>This extension is not affiliated with or endorsed by Credit Karma.</p>
+        <div class="footer-section">
+            <h3>Analyze Your Data</h3>
+            <div class="footer-links">
+                <a href="https://www.creditkarma.com/networth/transactions" target="_blank">📊 Go to Credit Karma Transactions Page</a>
+                <a href="https://github.com/cbangera2/BudgetLens" target="_blank">📈 BudgetLens Web Dashboard</a>
+                <a href="https://themeasureofaplan.com/budget-tracking-tool/" target="_blank">📑 TMOAP Spreadsheet Tool</a>
+            </div>
+        </div>
+
+        <div class="footer-section">
+            <h3>Extension Resources</h3>
+            <div class="footer-links">
+                <a href="https://github.com/cbangera2/CreditKarmaExtractor" target="_blank">📦 View on GitHub</a>
+                <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">🐛 Report an Issue</a>
+            </div>
+        </div>
+
+        <div class="footer-section footer-meta">
+            <p>&copy; 2024 Chirag Bangera. All rights reserved.</p>
+            <p>This extension is not affiliated with or endorsed by Credit Karma.</p>
+        </div>
     </div>
     <script src="popup.js"></script>
 </body>
