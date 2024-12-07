@@ -212,6 +212,21 @@
         .dark-mode input:checked + .slider {
             background-color: #7986cb;
         }
+
+        .csv-type-selection {
+            margin-bottom: 15px;
+        }
+        .checkbox-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .checkbox-container label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -233,6 +248,24 @@
     <div class="input-container">
         <label class="date-label" for="end-date">End Date</label>
         <input type="date" id="end-date">
+    </div>
+
+    <div class="csv-type-selection">
+        <h3>Select CSV Types to Export</h3>
+        <div class="checkbox-container">
+            <label>
+                <input type="checkbox" id="allTransactionsCheckbox" checked>
+                All Transactions
+            </label>
+            <label>
+                <input type="checkbox" id="incomeCheckbox">
+                Income
+            </label>
+            <label>
+                <input type="checkbox" id="expensesCheckbox">
+                Expenses
+            </label>
+        </div>
     </div>
 
     <button id="export-btn">Export</button>

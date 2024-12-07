@@ -142,24 +142,35 @@ async function captureTransactionsInDateRange(startDate, endDate) {
         return transactionDateTime >= startDateTime && transactionDateTime <= endDateTime;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
-    const csvData = convertToCSV(filteredTransactions);
-    saveCSVToFile(csvData, `all_transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
-    logResults(allTransactions, filteredTransactions, csvData);
-
-    const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
-    const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
-
-    const creditCsvData = convertToCSV(creditTransactions);
-    const debitCsvData = convertToCSV(debitTransactions);
-
-    saveCSVToFile(creditCsvData, `income_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
-    saveCSVToFile(debitCsvData, `expenses_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
+    return { allTransactions, filteredTransactions };
 }
 
 // Listener for messages from the popup script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'captureTransactions') {
-        captureTransactionsInDateRange(request.startDate, request.endDate);
+        const { startDate, endDate, csvTypes } = request;
+        
+        // Capture transactions first
+        captureTransactionsInDateRange(startDate, endDate).then(({ allTransactions, filteredTransactions }) => {
+            // Conditionally save CSV files based on checkbox states
+            if (csvTypes.allTransactions) {
+                const allCsvData = convertToCSV(filteredTransactions);
+                saveCSVToFile(allCsvData, `all_transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
+            }
+
+            if (csvTypes.income) {
+                const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
+                const creditCsvData = convertToCSV(creditTransactions);
+                saveCSVToFile(creditCsvData, `income_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
+            }
+
+            if (csvTypes.expenses) {
+                const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
+                const debitCsvData = convertToCSV(debitTransactions);
+                saveCSVToFile(debitCsvData, `expenses_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
+            }
+        });
+        
         sendResponse({status: 'started'});
     }
 });
