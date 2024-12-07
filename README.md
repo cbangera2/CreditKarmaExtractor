@@ -8,62 +8,100 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/cbangera2/CreditKarmaExtractor)
 ![GitHub last commit](https://img.shields.io/github/last-commit/cbangera2/CreditKarmaExtractor?color=red)
 
-The **Credit Karma Transaction Extractor** Chrome extension allows users to extract transaction data from Credit Karma and save it as a CSV file. This extension is particularly useful for users who need to analyze their financial transactions or import them into other financial management tools.
-
-## Features
-
-- **Date Range Extraction**: Users can specify a start and end month to extract transactions within a specific date range.
-- **CSV Export**: Extracted transactions are saved as CSV files, making it easy to analyze or import data into spreadsheets or financial software.
-- **User Interface**: Provides a simple popup interface with controls to start and stop extraction.
-- **BudgetLens Integration**: The exported CSV files are fully compatible with [BudgetLens](https://github.com/cbangera2/BudgetLens), a modern financial dashboard that provides powerful visualization and analysis of your Credit Karma transaction data.
-
-## Installation
-
-To install and use the extension:
-
-1. **Download Extension Files**:
-   - Clone or download the extension files from the repository.
-
-2. **Load the Extension in Chrome**:
-   - Open Google Chrome and go to `chrome://extensions/`.
-   - Enable "Developer mode" in the top right corner.
-   - Click on "Load unpacked" and select the directory where you cloned or downloaded the extension files.
-
-3. **Usage**:
-   - Navigate to `https://www.creditkarma.com/networth/transactions` in a Chrome tab.
-   - Click on the extension icon to open the popup.
-   - Select a start and end month for the transactions you want to extract.
-   - Click "Start Extraction" to begin extracting transactions.
-   - Click "Stop Extraction" if you want to stop the extraction process.
-   - Will download 3 files (all_transactions.csv, expenses.csv, and income.csv)
-   - Import exported data to a budget tracker my favorite is linked here: [TMOAP V4.2](https://themeasureofaplan.com/budget-tracking-tool/)
-   - Use [BudgetLens](https://github.com/cbangera2/BudgetLens) to visualize and analyze your Credit Karma transaction data with an intuitive, modern dashboard interface
+The **Credit Karma Transaction Extractor** Chrome extension allows you to easily export your Credit Karma transactions to CSV format for analysis in your preferred financial tools. Whether you're tracking expenses, analyzing spending patterns, or maintaining financial records, this extension streamlines the data extraction process.
 
 ## Screenshots
 
-<img width="335" alt="image" src="https://github.com/user-attachments/assets/c03e0761-0c7a-46a7-ad83-b9afd5c6e051">
+<img width="335" alt="Extension Interface" src="https://github.com/user-attachments/assets/c03e0761-0c7a-46a7-ad83-b9afd5c6e051">
 
+## Features
+
+- **Date Range Selection**: Choose specific start and end dates for transaction export
+- **Smart Data Export**: Automatically generates three CSV files:
+  - `all_transactions.csv`: Complete transaction history
+  - `expenses.csv`: Debit transactions only
+  - `income.csv`: Credit transactions only
+- **Dark Mode Support**: Seamless experience in both light and dark themes
+- **Automatic Scrolling**: Intelligently scrolls through all transactions in the selected date range
+- **CSV Format**: Export data in a format compatible with popular financial tools
+
+## Quick Start
+
+1. **Install the Extension**:
+   - Clone this repository or download the files
+   - Open Chrome and go to `chrome://extensions/`
+   - Enable "Developer mode" (top right)
+   - Click "Load unpacked" and select the extension directory
+
+2. **Export Transactions**:
+   - Go to [Credit Karma Transactions](https://www.creditkarma.com/networth/transactions)
+   - Click the extension icon
+   - Select your date range
+   - Click "Export" and wait for the files to download
+
+## Analyze Your Data
+
+After exporting, you have several options to analyze your transactions:
+
+1. **[BudgetLens](https://github.com/cbangera2/BudgetLens)**: Modern web dashboard for visualizing your financial data
+2. **[TMOAP Budget Tool](https://themeasureofaplan.com/budget-tracking-tool/)**: Comprehensive spreadsheet for detailed financial analysis
+3. Import into your preferred spreadsheet or financial software
+
+## Changelog
+
+### Version 1.1 (December 2024)
+- Added dark mode support with toggle switch
+- Improved date range scrolling functionality
+- Enhanced UI with modern design and better organization
+- Added quick links to analysis tools
+- Fixed cross-month date range scrolling issues
+- Improved security with updated content security policy
+- Enhanced responsive design for better usability
+
+### Version 1.0 (May 2024)
+- Initial release
+- Basic transaction extraction functionality
+- Date range selection
+- CSV export capability
+- Auto-scrolling feature
 
 ## Troubleshooting
 
-- **No Data Extracted**: Ensure you are logged into Credit Karma and on the transactions page (`https://www.creditkarma.com/networth/transactions`).
-- **Errors**: If you encounter any errors, check the console for error messages or reload the extension.
+If you encounter issues:
 
-## TODO
+1. **No Data Extracted**
+   - Verify you're logged into Credit Karma
+   - Ensure you're on the correct transactions page
+   - Check if the date range is valid
 
-Future improvements planned for the extension:
+2. **Scrolling Issues**
+   - Try selecting a smaller date range
+   - Refresh the page and try again
+   - Check console for any error messages
 
-- **Dark Mode Support**: Add dark mode detection and filtering for better transaction extraction in dark mode
-- **Transaction Categories**: Add support for extracting and preserving Credit Karma's transaction categories
-- **Auto-Categorization**: Implement smart transaction categorization based on merchant names
-- **Export Format Options**: Support additional export formats beyond CSV (e.g., JSON, Excel)
-- **Real-time Progress**: Add a progress indicator during extraction
-- **Error Recovery**: Implement automatic retry mechanism for failed extractions
-- **Search & Filter**: Add ability to search and filter transactions before export
-- **Batch Processing**: Support for processing multiple date ranges in one go
+## Roadmap
 
-Feel free to contribute to any of these features or suggest new ones by creating an issue or pull request!
+- Transaction search and filtering
+- Additional export formats (JSON, Excel)
+- Smart transaction categorization
+- Progress indicator during extraction
+- Batch processing for multiple date ranges
+- Enhanced error handling and recovery
+- Custom category mapping
+
+## Contributing
+
+Contributions are welcome! Feel free to:
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+For major changes, please open an issue first to discuss the proposed changes.
+
 
 ## Credits
 
 - Developed by [Chirag Bangera](https://github.com/cbangera2).
+---
+*This extension is not affiliated with or endorsed by Credit Karma.
