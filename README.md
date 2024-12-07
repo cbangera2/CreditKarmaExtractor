@@ -41,7 +41,8 @@ To install and use the extension:
 
 ## Screenshots
 
-<img width="338" alt="image" src="https://github.com/cbangera2/CreditKarmaExtractor/assets/18430740/881aae4c-ec2a-498e-b3fd-a64c88c4fb1f">
+<img width="335" alt="image" src="https://github.com/user-attachments/assets/c03e0761-0c7a-46a7-ad83-b9afd5c6e051">
+
 
 ## Troubleshooting
 
