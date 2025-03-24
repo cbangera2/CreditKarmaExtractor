@@ -120,18 +120,6 @@ function scrollDown() {
     // Scroll more aggressively to ensure all content loads
     const currentPosition = window.scrollY;
     window.scrollTo(0, currentPosition + window.innerHeight * 1.5); 
-    
-    // Try to find and click any "Load more" buttons
-    const loadMoreButtons = Array.from(document.querySelectorAll('button')).filter(
-        button => button.textContent.toLowerCase().includes('more') || 
-                 button.textContent.toLowerCase().includes('load') ||
-                 button.textContent.toLowerCase().includes('show')
-    );
-    
-    if (loadMoreButtons.length > 0) {
-        console.log('Found load more button, clicking it');
-        loadMoreButtons[0].click();
-    }
 }
 
 // Variable to control scrolling
