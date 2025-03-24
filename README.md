@@ -49,6 +49,12 @@ After exporting, you have several options to analyze your transactions:
 
 ## Changelog
 
+### Version 1.2 (March 2025)
+- Added real-time transaction counter during extraction
+- Added "Stop Scrolling" button to manually end extraction process
+- Enhanced date parsing for better historical data extraction
+- Added adaptive scrolling speeds to optimize performance
+
 ### Version 1.1 (December 2024)
 - Added dark mode support with toggle switch
 - Improved date range scrolling functionality

@@ -8,6 +8,12 @@ document.getElementById('export-btn').addEventListener('click', () => {
     const expensesChecked = document.getElementById('expensesCheckbox').checked;
     
     if (startDate && endDate) {
+        // Show loading indicator
+        const exportBtn = document.getElementById('export-btn');
+        const originalText = exportBtn.textContent;
+        exportBtn.textContent = 'Processing...';
+        exportBtn.disabled = true;
+        
         chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
             chrome.tabs.sendMessage(tabs[0].id, {
                 action: 'captureTransactions', 
@@ -19,7 +25,18 @@ document.getElementById('export-btn').addEventListener('click', () => {
                     expenses: expensesChecked
                 }
             }, (response) => {
-                console.log(response.status);
+                // Reset the button state after response
+                setTimeout(() => {
+                    exportBtn.textContent = originalText;
+                    exportBtn.disabled = false;
+                }, 3000);
+                
+                if (response) {
+                    console.log(response.status);
+                } else {
+                    console.error('No response from content script');
+                    alert('Please make sure you are on the Credit Karma transactions page and try again.');
+                }
             });
         });
     } else {
