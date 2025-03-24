@@ -12,7 +12,8 @@ The **Credit Karma Transaction Extractor** Chrome extension allows you to easily
 
 ## Screenshots
 
-<img width="335" alt="Extension Interface" src="https://github.com/user-attachments/assets/c03e0761-0c7a-46a7-ad83-b9afd5c6e051">
+<img width="328" alt="image" src="https://github.com/user-attachments/assets/f242fd13-0ac7-498e-9050-6e41344ab09b" />
+
 
 ## Features
 
