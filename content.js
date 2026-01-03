@@ -1,3 +1,429 @@
+// ============================================
+// API-Based Transaction Extraction
+// ============================================
+
+const API_ENDPOINT = 'https://api.creditkarma.com/graphql';
+const CLIENT_NAME = 'prime_web';
+const CLIENT_VERSION = '2.0.8';
+const DEVICE_TYPE = 'Desktop';
+
+// Cache for the access token
+let cachedAccessToken = null;
+
+/**
+ * Get the access token from CKAT cookie
+ * The CKAT cookie contains two JWT tokens separated by ; or %3B (URL encoded)
+ * We need only the first token (access token), not the second (refresh token)
+ */
+async function getAccessToken() {
+    // Return cached token if available
+    if (cachedAccessToken) {
+        return cachedAccessToken;
+    }
+
+    // Get the CKAT cookie value
+    let cookieValue = getCookieValue('CKAT');
+    if (cookieValue) {
+        // URL decode if needed
+        if (cookieValue.includes('%')) {
+            try {
+                cookieValue = decodeURIComponent(cookieValue);
+            } catch (e) {
+                console.log('[API] Cookie was not URL encoded');
+            }
+        }
+
+        // The CKAT cookie contains two tokens separated by ;
+        // First token is access token, second is refresh token
+        // We only need the first one
+        const tokens = cookieValue.split(';');
+        const accessToken = tokens[0].trim();
+
+        if (accessToken && accessToken.startsWith('eyJ')) {
+            console.log('[API] Found access token in CKAT cookie (JWT format)');
+            console.log('[API] Token length:', accessToken.length);
+            cachedAccessToken = accessToken;
+            return accessToken;
+        } else {
+            console.warn('[API] CKAT cookie does not contain valid JWT token');
+        }
+    }
+
+    // Try to extract from page context using script injection
+    return new Promise((resolve, reject) => {
+        // Create a unique ID for this request
+        const requestId = 'ck_token_' + Date.now();
+
+        // Listen for the response from the injected script
+        const handler = (event) => {
+            if (event.data && event.data.type === requestId) {
+                window.removeEventListener('message', handler);
+                if (event.data.token) {
+                    console.log('[API] Found access token from page context');
+                    cachedAccessToken = event.data.token;
+                    resolve(event.data.token);
+                } else {
+                    reject(new Error('No access token found in page context'));
+                }
+            }
+        };
+        window.addEventListener('message', handler);
+
+        // Inject script to get the token from page context
+        const script = document.createElement('script');
+        script.textContent = `
+            (function() {
+                var token = window._ACCESS_TOKEN || null;
+                window.postMessage({ type: '${requestId}', token: token }, '*');
+            })();
+        `;
+        document.documentElement.appendChild(script);
+        script.remove();
+
+        // Timeout after 2 seconds
+        setTimeout(() => {
+            window.removeEventListener('message', handler);
+            reject(new Error('Timeout waiting for access token'));
+        }, 2000);
+    });
+}
+
+/**
+ * Get authentication headers required for API calls
+ * Extracts tokens and IDs from cookies and page context
+ */
+async function getAuthHeaders() {
+    const accessToken = await getAccessToken();
+    const cookieId = getCookieValue('CKTRKID');
+    const traceId = getCookieValue('CKTRACEID') || generateTraceId();
+
+    console.log('[API] Auth debug:', {
+        hasAccessToken: !!accessToken,
+        tokenLength: accessToken ? accessToken.length : 0,
+        tokenPrefix: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
+        hasCookieId: !!cookieId,
+        hasTraceId: !!traceId
+    });
+
+    if (!accessToken) {
+        throw new Error('No access token found. Please ensure you are logged in to Credit Karma.');
+    }
+
+    return {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'ck-client-name': CLIENT_NAME,
+        'ck-client-version': CLIENT_VERSION,
+        'ck-cookie-id': cookieId || '',
+        'ck-device-type': DEVICE_TYPE,
+        'ck-trace-id': traceId
+    };
+}
+
+/**
+ * Get cookie value by name
+ */
+function getCookieValue(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? match[2] : null;
+}
+
+/**
+ * Generate a random trace ID if not available
+ */
+function generateTraceId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/**
+ * Fetch transactions using the GraphQL API
+ * Uses GetTransactionsList which returns ALL transactions in a single call
+ */
+async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
+    console.log('[API] Starting API-based transaction fetch');
+
+    const headers = await getAuthHeaders();
+
+    // Convert dates for filtering
+    const startDateTime = new Date(startDate);
+    const endDateTime = new Date(endDate);
+    endDateTime.setHours(23, 59, 59, 999); // Include the entire end date
+
+    // GetTransactionsList hash - returns ALL transactions in one call (no pagination needed!)
+    const TRANSACTIONS_LIST_HASH = 'c3c0a630b5cd938595c5901807f63b807e63c71f54a8fcb55e8c9084cb70832a';
+
+    if (onProgress) {
+        onProgress('Fetching all transactions...');
+    }
+
+    try {
+        // Build the simple request body - no pagination needed!
+        const requestBody = {
+            extensions: {
+                persistedQuery: {
+                    sha256Hash: TRANSACTIONS_LIST_HASH,
+                    version: 1
+                }
+            },
+            operationName: "GetTransactionsList",
+            variables: {
+                input: {
+                    accountInput: {},
+                    categoryInput: {
+                        categoryId: null,
+                        primeCategoryType: null
+                    }
+                }
+            }
+        };
+
+        console.log('[API] Sending GetTransactionsList request...');
+
+        const response = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[API] Response error:', errorText);
+
+            // Handle token refresh
+            if (response.status === 401 && errorText.includes('TOKEN_NEEDS_REFRESH')) {
+                console.log('[API] Token needs refresh, clearing cache and retrying...');
+                cachedAccessToken = null;
+                const newHeaders = await getAuthHeaders();
+
+                // Retry with new token
+                const retryResponse = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: newHeaders,
+                    credentials: 'include',
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!retryResponse.ok) {
+                    throw new Error(`API request failed after token refresh: ${retryResponse.status}`);
+                }
+
+                const retryData = await retryResponse.json();
+                return processTransactionResponse(retryData, startDateTime, endDateTime, onProgress);
+            }
+
+            throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return processTransactionResponse(data, startDateTime, endDateTime, onProgress);
+
+    } catch (error) {
+        console.error('[API] Error fetching transactions:', error);
+        throw error;
+    }
+}
+
+/**
+ * Process the GetTransactionsList response and filter by date range
+ */
+function processTransactionResponse(data, startDateTime, endDateTime, onProgress) {
+    if (data.errors && data.errors.length > 0) {
+        console.error('[API] GraphQL errors:', JSON.stringify(data.errors, null, 2));
+        throw new Error(`GraphQL error: ${data.errors[0].message}`);
+    }
+
+    // Navigate to the correct response structure
+    // Different endpoints have different structures:
+    // - GetTransactions: data.prime.transactionsHub.transactionPage.transactions
+    // - GetTransactionsList: data.prime.transactionList.transactions
+    const transactionPage = data.data?.prime?.transactionsHub?.transactionPage;
+    const transactionList = data.data?.prime?.transactionList; // Note: singular "List"
+
+    console.log('[API] Response keys under prime:', Object.keys(data.data?.prime || {}));
+    if (transactionList) {
+        console.log('[API] transactionList keys:', Object.keys(transactionList));
+    }
+
+    let transactions = [];
+    if (transactionPage?.transactions) {
+        console.log('[API] Found transactions in transactionsHub.transactionPage');
+        transactions = transactionPage.transactions;
+    } else if (transactionList?.transactions) {
+        console.log('[API] Found transactions in transactionList.transactions');
+        transactions = transactionList.transactions;
+    } else if (Array.isArray(transactionList)) {
+        console.log('[API] transactionList is an array directly');
+        transactions = transactionList;
+    } else if (data.data?.transactions) {
+        console.log('[API] Found transactions directly in data');
+        transactions = data.data.transactions;
+    }
+
+    if (!transactions || transactions.length === 0) {
+        console.log('[API] No transactions in response. Response structure:', Object.keys(data.data || {}));
+        console.log('[API] Prime structure:', Object.keys(data.data?.prime || {}));
+        console.log('[API] Full response preview:', JSON.stringify(data).substring(0, 1500));
+        return [];
+    }
+
+    console.log(`[API] Received ${transactions.length} total transactions from API`);
+
+    if (onProgress) {
+        onProgress(`Processing ${transactions.length} transactions...`);
+    }
+
+    // Filter and transform transactions
+    const allTransactions = [];
+    for (const txn of transactions) {
+        const transactionDate = new Date(txn.date);
+
+        // Filter by date range
+        if (transactionDate >= startDateTime && transactionDate <= endDateTime) {
+            const amount = txn.amount?.value || 0;
+            const categoryType = txn.category?.type || '';
+            const isCredit = amount > 0 || categoryType === 'INCOME';
+
+            allTransactions.push({
+                id: txn.id,
+                description: txn.description || txn.merchant?.name || '',
+                category: txn.category?.name || '',
+                amount: Math.abs(amount),
+                date: txn.date,
+                transactionType: isCredit ? 'credit' : 'debit',
+                accountName: txn.account?.name || '',
+                accountType: txn.account?.type || '',
+                provider: txn.account?.providerName || ''
+            });
+        }
+    }
+
+    console.log(`[API] Filtered to ${allTransactions.length} transactions in date range`);
+    return allTransactions;
+}
+
+/**
+ * Fetch transaction detail to get account name
+ * Used when account info is not available in the list view
+ */
+async function fetchTransactionDetail(transactionUrn) {
+    console.log('[API] Fetching transaction detail:', transactionUrn);
+
+    const headers = await getAuthHeaders();
+
+    try {
+        const query = {
+            operationName: "GetTransactionDetail",
+            variables: {
+                urn: transactionUrn
+            },
+            query: `
+                query GetTransactionDetail($urn: String!) {
+                    transaction(urn: $urn) {
+                        id
+                        urn
+                        description
+                        amount {
+                            value
+                            currencyCode
+                        }
+                        transactionDate
+                        category {
+                            name
+                        }
+                        account {
+                            id
+                            name
+                            accountType
+                            provider {
+                                name
+                            }
+                        }
+                        transactionType
+                        merchant {
+                            name
+                        }
+                    }
+                }
+            `
+        };
+
+        const response = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify(query)
+        });
+
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.errors) {
+            console.warn('[API] Transaction detail errors:', data.errors);
+            return null;
+        }
+
+        return data.data?.transaction;
+
+    } catch (error) {
+        console.error('[API] Error fetching transaction detail:', error);
+        return null;
+    }
+}
+
+/**
+ * Enrich transactions with account names by fetching details
+ * Only called when fetchAccountNames option is enabled
+ */
+async function enrichTransactionsWithAccountNames(transactions, onProgress) {
+    console.log('[API] Enriching transactions with account names');
+
+    const enrichedTransactions = [];
+    let processed = 0;
+
+    for (const transaction of transactions) {
+        // Skip if already has account name
+        if (transaction.accountName) {
+            enrichedTransactions.push(transaction);
+            processed++;
+            continue;
+        }
+
+        if (transaction.urn) {
+            const detail = await fetchTransactionDetail(transaction.urn);
+            if (detail && detail.account) {
+                transaction.accountName = detail.account.name || '';
+                transaction.accountType = detail.account.accountType || '';
+                transaction.provider = detail.account.provider?.name || '';
+            }
+        }
+
+        enrichedTransactions.push(transaction);
+        processed++;
+
+        if (onProgress && processed % 10 === 0) {
+            onProgress(`Fetching account details... ${processed}/${transactions.length}`);
+        }
+
+        // Rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    return enrichedTransactions;
+}
+
+// ============================================
+// Original DOM-based extraction (Fallback)
+// ============================================
+
 function convertDateFormat(inputDate) {
     // Handle various date formats that might appear in Credit Karma
     var parsedDate;
@@ -113,10 +539,12 @@ function filterEmptyTransactions(transactions) {
 }
 
 function convertToCSV(transactions) {
-    const header = 'Date,Description,Amount,Category,Transaction Type,Account Name,Labels,Notes\n';
-    const rows = transactions.map(transaction =>
-        `"${convertDateFormat(transaction.date)}","${transaction.description}","${transaction.amount}","${transaction.category}","${transaction.transactionType}",,,\n`
-    );
+    const header = 'Date,Description,Amount,Category,Transaction Type,Account Name,Account Type,Provider,Labels,Notes\n';
+    const rows = transactions.map(transaction => {
+        // Escape double quotes in strings
+        const escape = (str) => String(str || '').replace(/"/g, '""');
+        return `"${convertDateFormat(transaction.date)}","${escape(transaction.description)}","${transaction.amount}","${escape(transaction.category)}","${transaction.transactionType}","${escape(transaction.accountName || '')}","${escape(transaction.accountType || '')}","${escape(transaction.provider || '')}","",""\n`;
+    });
     return header + rows.join('');
 }
 
@@ -146,8 +574,56 @@ function scrollDown() {
 // Variable to control scrolling
 let stopScrolling = false;
 
-async function captureTransactionsInDateRange(startDate, endDate) {
-    console.log(`Starting capture: ${startDate} to ${endDate}`);
+/**
+ * Main capture function - tries API first, falls back to scroll-based extraction
+ * @param {string} startDate - Start date for the transaction range
+ * @param {string} endDate - End date for the transaction range
+ * @param {boolean} fetchAccountNames - Whether to fetch account names for each transaction
+ * @param {boolean} useApi - Whether to try API extraction first (default: true)
+ */
+async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNames = false, useApi = true) {
+    console.log(`Starting capture: ${startDate} to ${endDate} (fetchAccountNames: ${fetchAccountNames}, useApi: ${useApi})`);
+
+    // Try API-based extraction first if enabled
+    if (useApi) {
+        try {
+            console.log('[API] Attempting API-based extraction...');
+            let transactions = await fetchTransactionsViaAPI(startDate, endDate, (msg) => {
+                console.log('[API Progress]', msg);
+            });
+
+            if (transactions && transactions.length > 0) {
+                console.log(`[API] Successfully fetched ${transactions.length} transactions via API`);
+
+                // Optionally enrich with account names
+                if (fetchAccountNames) {
+                    const needsEnrichment = transactions.filter(t => !t.accountName).length;
+                    if (needsEnrichment > 0) {
+                        console.log(`[API] Enriching ${needsEnrichment} transactions with account names...`);
+                        transactions = await enrichTransactionsWithAccountNames(transactions, (msg) => {
+                            console.log('[API Progress]', msg);
+                        });
+                    }
+                }
+
+                // Sort by date (newest first)
+                transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                return {
+                    allTransactions: transactions,
+                    filteredTransactions: transactions
+                };
+            }
+        } catch (apiError) {
+            console.warn('[API] API extraction failed, falling back to scroll method:', apiError.message);
+            console.error('[API] Full error:', apiError);
+            console.error('[API] Stack trace:', apiError.stack);
+        }
+    }
+
+    // Fallback to scroll-based extraction
+    console.log('[Scroll] Using scroll-based extraction...');
+
     let allTransactions = [];
     const startDateTime = new Date(startDate).getTime();
     const endDateTime = new Date(endDate).getTime();
@@ -397,11 +873,12 @@ async function captureTransactionsInDateRange(startDate, endDate) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'captureTransactions') {
         try {
-            const { startDate, endDate, csvTypes } = request;
-            console.log(`Received request to capture transactions from ${startDate} to ${endDate}`);
+            const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true } = request;
+            console.log(`Received request to capture transactions from ${startDate} to ${endDate} (useApi: ${useApi}, fetchAccountNames: ${fetchAccountNames})`);
 
-            // Create a visual indicator that scraping is in progress - moved to left side
+            // Create a visual indicator that extraction is in progress - moved to left side
             const indicator = document.createElement('div');
+            indicator.id = 'ck-extractor-indicator';
             indicator.style.position = 'fixed';
             indicator.style.top = '10px';
             indicator.style.left = '20px'; // Changed from right to left
@@ -411,14 +888,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             indicator.style.borderRadius = '5px';
             indicator.style.zIndex = '9999';
             indicator.style.fontSize = '14px';
-            indicator.textContent = 'Scraping transactions... Please wait.';
+            indicator.textContent = useApi ? 'Extracting transactions via API...' : 'Extracting transactions via scrolling...';
             document.body.appendChild(indicator);
 
             // Immediately respond to avoid connection issues
             sendResponse({ status: 'started', message: 'Transaction capture started' });
 
-            // Capture transactions
-            captureTransactionsInDateRange(startDate, endDate).then(({ allTransactions, filteredTransactions }) => {
+            // Capture transactions (API-first with scroll fallback)
+            captureTransactionsInDateRange(startDate, endDate, fetchAccountNames, useApi).then(({ allTransactions, filteredTransactions }) => {
                 console.log(`Capture complete. Found ${filteredTransactions.length} transactions in range`);
 
                 // Remove the indicator

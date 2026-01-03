@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,7 +13,7 @@
             margin: 0;
             transition: background-color 0.3s, color 0.3s;
         }
-        
+
         h2 {
             margin-top: 0;
             margin-bottom: 20px;
@@ -201,37 +202,51 @@
             border-radius: 50%;
         }
 
-        input:checked + .slider {
+        input:checked+.slider {
             background-color: #3f51b5;
         }
 
-        input:checked + .slider:before {
+        input:checked+.slider:before {
             transform: translateX(20px);
         }
 
-        .dark-mode input:checked + .slider {
+        .dark-mode input:checked+.slider {
             background-color: #7986cb;
         }
 
         .csv-type-selection {
             margin-bottom: 15px;
         }
+
         .checkbox-container {
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
+
         .checkbox-container label {
             display: flex;
             align-items: center;
             gap: 10px;
             font-size: 14px;
         }
+
+        .option-helper {
+            font-size: 11px;
+            color: #888;
+            margin: 8px 0 0 0;
+            font-style: italic;
+        }
+
+        .dark-mode .option-helper {
+            color: #aaa;
+        }
     </style>
 </head>
+
 <body>
     <h2>Export Transactions</h2>
-    
+
     <div class="theme-switch">
         <label class="switch">
             <input type="checkbox" id="dark-mode-toggle">
@@ -248,6 +263,21 @@
     <div class="input-container">
         <label class="date-label" for="end-date">End Date</label>
         <input type="date" id="end-date">
+    </div>
+
+    <div class="csv-type-selection">
+        <h3>Extraction Options</h3>
+        <div class="checkbox-container">
+            <label>
+                <input type="checkbox" id="useApiCheckbox" checked>
+                Use API (faster, recommended)
+            </label>
+            <label>
+                <input type="checkbox" id="fetchAccountNamesCheckbox">
+                Include Account Names (slower)
+            </label>
+        </div>
+        <p class="option-helper">Account names require individual API calls per transaction.</p>
     </div>
 
     <div class="csv-type-selection">
@@ -274,9 +304,11 @@
         <div class="footer-section">
             <h3>Analyze Your Data</h3>
             <div class="footer-links">
-                <a href="https://www.creditkarma.com/networth/transactions" target="_blank">📊 Go to Credit Karma Transactions Page</a>
+                <a href="https://www.creditkarma.com/networth/transactions" target="_blank">📊 Go to Credit Karma
+                    Transactions Page</a>
                 <a href="https://github.com/cbangera2/BudgetLens" target="_blank">📈 BudgetLens Web Dashboard</a>
-                <a href="https://themeasureofaplan.com/budget-tracking-tool/" target="_blank">📑 TMOAP Spreadsheet Tool</a>
+                <a href="https://themeasureofaplan.com/budget-tracking-tool/" target="_blank">📑 TMOAP Spreadsheet
+                    Tool</a>
             </div>
         </div>
 
@@ -284,7 +316,8 @@
             <h3>Extension Resources</h3>
             <div class="footer-links">
                 <a href="https://github.com/cbangera2/CreditKarmaExtractor" target="_blank">📦 View on GitHub</a>
-                <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">🐛 Report an Issue</a>
+                <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">🐛 Report an
+                    Issue</a>
             </div>
         </div>
 
@@ -295,4 +328,5 @@
     </div>
     <script src="popup.js"></script>
 </body>
+
 </html>
