@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install dependencies
       run: |
@@ -38,7 +38,7 @@ jobs:
         echo "Extension packaged successfully ($(du -h extension.zip | cut -f1))"
 
     - name: Upload Extension Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: credit-karma-extractor
         path: extension.zip
