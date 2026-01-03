@@ -1,5 +1,6 @@
 # Credit Karma Transaction Extractor Chrome Extension
 
+[![Build Extension](https://github.com/cbangera2/CreditKarmaExtractor/actions/workflows/build-extension.yml/badge.svg)](https://github.com/cbangera2/CreditKarmaExtractor/actions/workflows/build-extension.yml)
 ![GitHub stars](https://img.shields.io/github/stars/cbangera2/CreditKarmaExtractor?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/cbangera2/CreditKarmaExtractor?style=social)
 ![GitHub top language](https://img.shields.io/github/languages/top/cbangera2/CreditKarmaExtractor)
