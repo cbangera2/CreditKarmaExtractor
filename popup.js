@@ -4,7 +4,6 @@ document.getElementById('export-btn').addEventListener('click', () => {
 
     // Get checkbox states - extraction options
     const useApiChecked = document.getElementById('useApiCheckbox').checked;
-    const fetchAccountNamesChecked = document.getElementById('fetchAccountNamesCheckbox').checked;
 
     // Get checkbox states - CSV types
     const allTransactionsChecked = document.getElementById('allTransactionsCheckbox').checked;
@@ -24,7 +23,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
                 startDate,
                 endDate,
                 useApi: useApiChecked,
-                fetchAccountNames: fetchAccountNamesChecked,
+                fetchAccountNames: false,
                 csvTypes: {
                     allTransactions: allTransactionsChecked,
                     income: incomeChecked,

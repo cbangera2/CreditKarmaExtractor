@@ -136,10 +136,10 @@ function generateTraceId() {
 /**
  * Main API entry point: Orchestrates fetching recent + historical data
  */
-async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
+async function fetchTransactionsViaAPI(startDate, endDate, onProgress, signal) {
     // 1. Fetch recent data using the fast GetTransactionsList endpoint
     console.log('[API] Phase 1: Fetching recent transactions...');
-    let transactions = await fetchRecentTransactions(startDate, endDate, onProgress);
+    let transactions = await fetchRecentTransactions(startDate, endDate, onProgress, signal);
 
     if (!transactions) {
         transactions = [];
@@ -167,7 +167,7 @@ async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
         const historyEndDate = new Date(oldestDate);
         historyEndDate.setDate(historyEndDate.getDate() - 1);
 
-        const historicalTransactions = await fetchHistoricalTransactions(startDate, historyEndDate, onProgress);
+        const historicalTransactions = await fetchHistoricalTransactions(startDate, historyEndDate, onProgress, signal);
 
         if (historicalTransactions.length > 0) {
             console.log(`[API] Merging ${historicalTransactions.length} historical transactions`);
@@ -181,7 +181,7 @@ async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
 /**
  * Fetch recent transactions using GetTransactionsList 
  */
-async function fetchRecentTransactions(startDate, endDate, onProgress) {
+async function fetchRecentTransactions(startDate, endDate, onProgress, signal) {
     console.log('[API] Starting API-based transaction fetch (Recent)');
 
     const headers = await getAuthHeaders();
@@ -224,7 +224,8 @@ async function fetchRecentTransactions(startDate, endDate, onProgress) {
             method: 'POST',
             headers: headers,
             credentials: 'include',
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: signal
         });
 
         if (!response.ok) {
@@ -268,7 +269,7 @@ async function fetchRecentTransactions(startDate, endDate, onProgress) {
  * Fetch historical transactions using robust pagination
  * Since date filtering seems ignored, we page from the top and skip what we already have
  */
-async function fetchHistoricalTransactions(startDate, endDate, onProgress) {
+async function fetchHistoricalTransactions(startDate, endDate, onProgress, signal) {
     console.log(`[API] Starting historical fetch via pagination (Target: < ${convertDateFormat(endDate.toISOString())})`);
 
     // Hash for the filtered/paginated query
@@ -288,12 +289,17 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress) {
     // But we need to paginate through them to get the cursor for the older data
 
     while (hasNextPage) {
+        if (stopScrolling) {
+            console.log('[API] User requested stop');
+            break;
+        }
+
         pageCount++;
         if (onProgress) {
             if (allHistoricalTransactions.length === 0) {
                 onProgress(`Scanning history page ${pageCount}...`);
             } else {
-                onProgress(`Fetching history page ${pageCount} (${allHistoricalTransactions.length} txns found)...`);
+                onProgress(`Fetching history page ${pageCount} (${allHistoricalTransactions.length} transactions found)...`);
             }
         }
 
@@ -336,7 +342,8 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress) {
                 method: 'POST',
                 headers: headers,
                 credentials: 'include',
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal: signal
             });
 
             if (!response.ok) {
@@ -426,6 +433,10 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress) {
             retryCount = 0; // Reset retries on success
 
         } catch (e) {
+            if (e.name === 'AbortError') {
+                console.log('[API] Historical scan aborted by user.');
+                break;
+            }
             console.error('[API] Error in history page:', e);
             retryCount++;
             if (retryCount > maxRetries) {
@@ -794,13 +805,63 @@ let stopScrolling = false;
 async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNames = false, useApi = true) {
     console.log(`Starting capture: ${startDate} to ${endDate} (fetchAccountNames: ${fetchAccountNames}, useApi: ${useApi})`);
 
+    // Reset stop flag
+    stopScrolling = false;
+
+    // Create stop button (for both API and Scroll modes)
+    const stopButton = document.createElement('button');
+    stopButton.textContent = 'Stop Extraction';
+    stopButton.style.position = 'fixed';
+    stopButton.style.bottom = '20px';
+    stopButton.style.left = '20px';
+    stopButton.style.zIndex = '10000';
+    stopButton.style.padding = '10px 20px';
+    stopButton.style.backgroundColor = '#ff3b30';
+    stopButton.style.color = 'white';
+    stopButton.style.border = 'none';
+    stopButton.style.borderRadius = '5px';
+    stopButton.style.fontWeight = 'bold';
+    stopButton.style.cursor = 'pointer';
+    stopButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+
+    // Create AbortController for API requests
+    const abortController = new AbortController();
+
+    stopButton.addEventListener('mouseover', () => { stopButton.style.backgroundColor = '#d9342b'; });
+    stopButton.addEventListener('mouseout', () => { stopButton.style.backgroundColor = '#ff3b30'; });
+    stopButton.addEventListener('click', () => {
+        stopScrolling = true;
+        abortController.abort(); // Cancel pending API requests
+        stopButton.textContent = 'Stopping...';
+        stopButton.style.backgroundColor = '#999';
+        stopButton.disabled = true;
+    });
+    document.body.appendChild(stopButton);
+
+    // Create info overlay
+    const counterElement = document.createElement('div');
+    counterElement.style.position = 'fixed';
+    counterElement.style.bottom = '80px';
+    counterElement.style.left = '20px';
+    counterElement.style.zIndex = '10000';
+    counterElement.style.padding = '10px';
+    counterElement.style.backgroundColor = 'rgba(0,0,0,0.7)';
+    counterElement.style.color = 'white';
+    counterElement.style.borderRadius = '5px';
+    counterElement.style.fontSize = '14px';
+    counterElement.textContent = 'Initializing...';
+    document.body.appendChild(counterElement);
+
     // Try API-based extraction first if enabled
     if (useApi) {
         try {
             console.log('[API] Attempting API-based extraction...');
+            counterElement.textContent = 'Connecting to Credit Karma API...';
+
             let transactions = await fetchTransactionsViaAPI(startDate, endDate, (msg) => {
                 console.log('[API Progress]', msg);
-            });
+                counterElement.textContent = msg;
+            }, abortController.signal);
 
             if (transactions && transactions.length > 0) {
                 console.log(`[API] Successfully fetched ${transactions.length} transactions via API`);
@@ -828,15 +889,20 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
 
 
                 // Optionally enrich with account names
-                if (fetchAccountNames) {
+                if (fetchAccountNames && !stopScrolling) {
                     const needsEnrichment = transactions.filter(t => !t.accountName).length;
                     if (needsEnrichment > 0) {
                         console.log(`[API] Enriching ${needsEnrichment} transactions with account names...`);
                         transactions = await enrichTransactionsWithAccountNames(transactions, (msg) => {
                             console.log('[API Progress]', msg);
+                            counterElement.textContent = msg;
                         });
                     }
                 }
+
+                // Cleanup UI elements before returning
+                if (stopButton.parentNode) stopButton.parentNode.removeChild(stopButton);
+                if (counterElement.parentNode) counterElement.parentNode.removeChild(counterElement);
 
                 return {
                     allTransactions: transactions,
@@ -844,6 +910,12 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
                 };
             }
         } catch (apiError) {
+            if (apiError.name === 'AbortError') {
+                console.log('[API] Extraction aborted by user.');
+                if (stopButton.parentNode) stopButton.parentNode.removeChild(stopButton);
+                if (counterElement.parentNode) counterElement.parentNode.removeChild(counterElement);
+                return { allTransactions: [], filteredTransactions: [] };
+            }
             console.warn('[API] API extraction failed, falling back to scroll method:', apiError.message);
             console.error('[API] Full error:', apiError);
             console.error('[API] Stack trace:', apiError.stack);
@@ -862,54 +934,7 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
     let foundTargetDateRange = false;
     let consecutiveTargetDateMatches = 0;
 
-    // Reset stop flag
-    stopScrolling = false;
 
-    // Create stop button - moved to left side
-    const stopButton = document.createElement('button');
-    stopButton.textContent = 'Stop Scrolling';
-    stopButton.style.position = 'fixed';
-    stopButton.style.bottom = '20px';
-    stopButton.style.left = '20px'; // Changed from right to left
-    stopButton.style.zIndex = '10000';
-    stopButton.style.padding = '10px 20px';
-    stopButton.style.backgroundColor = '#ff3b30';
-    stopButton.style.color = 'white';
-    stopButton.style.border = 'none';
-    stopButton.style.borderRadius = '5px';
-    stopButton.style.fontWeight = 'bold';
-    stopButton.style.cursor = 'pointer';
-    stopButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
-
-    // Add hover effect
-    stopButton.addEventListener('mouseover', () => {
-        stopButton.style.backgroundColor = '#d9342b';
-    });
-    stopButton.addEventListener('mouseout', () => {
-        stopButton.style.backgroundColor = '#ff3b30';
-    });
-
-    stopButton.addEventListener('click', () => {
-        stopScrolling = true;
-        stopButton.textContent = 'Stopping...';
-        stopButton.style.backgroundColor = '#999';
-        stopButton.disabled = true;
-    });
-
-    document.body.appendChild(stopButton);
-
-    // Update counter element - moved to left side
-    const counterElement = document.createElement('div');
-    counterElement.style.position = 'fixed';
-    counterElement.style.bottom = '80px';
-    counterElement.style.left = '20px'; // Changed from right to left
-    counterElement.style.zIndex = '10000';
-    counterElement.style.padding = '10px';
-    counterElement.style.backgroundColor = 'rgba(0,0,0,0.7)';
-    counterElement.style.color = 'white';
-    counterElement.style.borderRadius = '5px';
-    counterElement.style.fontSize = '14px';
-    document.body.appendChild(counterElement);
 
     try {
         // Helper function to wait for DOM to stabilize after scroll
