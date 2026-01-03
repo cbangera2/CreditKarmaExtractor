@@ -12,6 +12,9 @@ function convertDateFormat(inputDate) {
         } else if (inputDate.match(/[A-Za-z]+\s\d+,\s\d+/)) {
             // Month DD, YYYY format (e.g., "January 15, 2023")
             parsedDate = new Date(inputDate);
+        } else if (inputDate.match(/[A-Za-z]+\s\d+/)) {
+            // Month DD format without year (e.g., "January 15") - assume current year
+            parsedDate = new Date(inputDate + ', ' + new Date().getFullYear());
         } else {
             // Try direct parsing
             parsedDate = new Date(inputDate);
@@ -19,12 +22,12 @@ function convertDateFormat(inputDate) {
     } else {
         parsedDate = new Date(inputDate);
     }
-    
-    if (isNaN(parsedDate.getTime())) {
+
+    if (!parsedDate || isNaN(parsedDate.getTime())) {
         console.error(`Invalid date format: ${inputDate}`);
         return '';
     }
-    
+
     var day = ("0" + parsedDate.getDate()).slice(-2);
     var month = ("0" + (parsedDate.getMonth() + 1)).slice(-2);
     var year = parsedDate.getFullYear();
@@ -79,13 +82,27 @@ function extractTransactionInfo(element) {
 
 function extractAllTransactions() {
     const transactionElements = document.querySelectorAll('[data-index]');
-    return Array.from(transactionElements, element => extractTransactionInfo(element));
+    return Array.from(transactionElements, element => extractTransactionInfo(element))
+        // Filter out incomplete transactions (may be still loading)
+        .filter(t => t.description || t.amount);
 }
 
 function combineTransactions(existingTransactions, newTransactions) {
-    const uniqueNewTransactions = newTransactions.filter(newTransaction =>
-        !existingTransactions.some(existingTransaction => existingTransaction.dataIndex === newTransaction.dataIndex)
-    );
+    // Create a unique key using multiple fields to avoid false deduplication
+    // Credit Karma may recycle data-index values for virtual scrolling
+    const createTransactionKey = (t) => `${t.description}_${t.amount}_${t.date}_${t.category}`;
+
+    const existingKeys = new Set(existingTransactions.map(createTransactionKey));
+
+    const uniqueNewTransactions = newTransactions.filter(newTransaction => {
+        const key = createTransactionKey(newTransaction);
+        if (existingKeys.has(key)) {
+            return false; // Already have this transaction
+        }
+        existingKeys.add(key); // Add to set to prevent duplicates within newTransactions
+        return true;
+    });
+
     return [...existingTransactions, ...uniqueNewTransactions];
 }
 
@@ -117,9 +134,13 @@ function logResults(allTransactions, filteredTransactions, csvData) {
 }
 
 function scrollDown() {
-    // Scroll more aggressively to ensure all content loads
+    // Use moderate scroll increments to balance speed and reliability
+    // Credit Karma uses virtual scrolling, so we need some overlap
     const currentPosition = window.scrollY;
-    window.scrollTo(0, currentPosition + window.innerHeight * 1.5); 
+    window.scrollTo({
+        top: currentPosition + window.innerHeight,
+        behavior: 'smooth'
+    });
 }
 
 // Variable to control scrolling
@@ -135,10 +156,10 @@ async function captureTransactionsInDateRange(startDate, endDate) {
     let scrollAttempts = 0;
     let foundTargetDateRange = false;
     let consecutiveTargetDateMatches = 0;
-    
+
     // Reset stop flag
     stopScrolling = false;
-    
+
     // Create stop button - moved to left side
     const stopButton = document.createElement('button');
     stopButton.textContent = 'Stop Scrolling';
@@ -154,7 +175,7 @@ async function captureTransactionsInDateRange(startDate, endDate) {
     stopButton.style.fontWeight = 'bold';
     stopButton.style.cursor = 'pointer';
     stopButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
-    
+
     // Add hover effect
     stopButton.addEventListener('mouseover', () => {
         stopButton.style.backgroundColor = '#d9342b';
@@ -162,16 +183,16 @@ async function captureTransactionsInDateRange(startDate, endDate) {
     stopButton.addEventListener('mouseout', () => {
         stopButton.style.backgroundColor = '#ff3b30';
     });
-    
+
     stopButton.addEventListener('click', () => {
         stopScrolling = true;
         stopButton.textContent = 'Stopping...';
         stopButton.style.backgroundColor = '#999';
         stopButton.disabled = true;
     });
-    
+
     document.body.appendChild(stopButton);
-    
+
     // Update counter element - moved to left side
     const counterElement = document.createElement('div');
     counterElement.style.position = 'fixed';
@@ -184,23 +205,58 @@ async function captureTransactionsInDateRange(startDate, endDate) {
     counterElement.style.borderRadius = '5px';
     counterElement.style.fontSize = '14px';
     document.body.appendChild(counterElement);
-    
+
     try {
+        // Helper function to wait for DOM to stabilize after scroll
+        const waitForDOMUpdate = async (timeout = 2000) => {
+            return new Promise((resolve) => {
+                let lastCount = document.querySelectorAll('[data-index]').length;
+                let stableCount = 0;
+                const checkInterval = 100; // Check every 100ms
+                const requiredStableChecks = 3; // DOM must be stable for 3 checks
+                let elapsed = 0;
+
+                const check = () => {
+                    const currentCount = document.querySelectorAll('[data-index]').length;
+                    if (currentCount === lastCount) {
+                        stableCount++;
+                    } else {
+                        stableCount = 0;
+                        lastCount = currentCount;
+                    }
+
+                    elapsed += checkInterval;
+
+                    if (stableCount >= requiredStableChecks || elapsed >= timeout) {
+                        resolve();
+                    } else {
+                        setTimeout(check, checkInterval);
+                    }
+                };
+
+                setTimeout(check, checkInterval);
+            });
+        };
+
         while (!stopScrolling) {
             scrollAttempts++;
             counterElement.textContent = `Scroll: ${scrollAttempts} | Found: ${allTransactions.length} total | In range: ${allTransactions.filter(t => {
                 try {
                     const date = new Date(t.date).getTime();
                     return date >= startDateTime && date <= endDateTime;
-                } catch(e) { return false; }
+                } catch (e) { return false; }
             }).length}`;
-            
+
+            // CRITICAL FIX: Wait for DOM to stabilize BEFORE extracting
+            // This ensures lazy-loaded content is fully rendered
+            await waitForDOMUpdate();
+
             const newTransactions = extractAllTransactions();
-            
+
             // Log every batch of transactions we find
             if (newTransactions.length > 0) {
                 console.log(`Found ${newTransactions.length} transactions on this scroll`);
-                
+
                 // Sort transactions by date (newest to oldest)
                 const sortedTransactions = [...newTransactions].sort((a, b) => {
                     try {
@@ -209,15 +265,15 @@ async function captureTransactionsInDateRange(startDate, endDate) {
                         return 0;
                     }
                 });
-                
+
                 if (sortedTransactions.length > 0) {
                     console.log(`Newest transaction date: ${sortedTransactions[0].date}`);
-                    console.log(`Oldest transaction date: ${sortedTransactions[sortedTransactions.length-1].date}`);
+                    console.log(`Oldest transaction date: ${sortedTransactions[sortedTransactions.length - 1].date}`);
                 }
             }
-            
+
             allTransactions = combineTransactions(allTransactions, newTransactions);
-            
+
             // Check if we have any transactions in our target date range
             const transactionsInRange = newTransactions.filter(transaction => {
                 try {
@@ -229,12 +285,12 @@ async function captureTransactionsInDateRange(startDate, endDate) {
                     return false;
                 }
             });
-            
+
             if (transactionsInRange.length > 0) {
                 console.log(`Found ${transactionsInRange.length} transactions in target range on this scroll`);
                 foundTargetDateRange = true;
                 consecutiveTargetDateMatches++;
-                
+
                 // If we've found transactions in our range for 3 consecutive scrolls, we can use a shorter wait time
                 if (consecutiveTargetDateMatches >= 3) {
                     console.log('Found transactions in target range for 3 consecutive scrolls - will speed up scrolling');
@@ -242,10 +298,10 @@ async function captureTransactionsInDateRange(startDate, endDate) {
             } else {
                 consecutiveTargetDateMatches = 0;
             }
-            
+
             // Determine if we've scrolled past our date range
             let scrolledPastDateRange = false;
-            
+
             // Find the oldest transaction in the current batch
             const oldestTransaction = newTransactions.reduce((oldest, current) => {
                 try {
@@ -256,13 +312,13 @@ async function captureTransactionsInDateRange(startDate, endDate) {
                     return oldest;
                 }
             }, null);
-            
+
             if (oldestTransaction) {
                 try {
                     const oldestDateTime = new Date(oldestTransaction.date).getTime();
                     console.log(`Oldest transaction on this scroll: ${oldestTransaction.date} (${new Date(oldestDateTime).toLocaleDateString()})`);
                     console.log(`Target start date: ${startDate} (${new Date(startDateTime).toLocaleDateString()})`);
-                    
+
                     // Only consider we've scrolled past if:
                     // 1. We've found some transactions in our range already
                     // 2. The oldest transaction is significantly older than our start date (2 weeks)
@@ -275,7 +331,7 @@ async function captureTransactionsInDateRange(startDate, endDate) {
                     console.error(`Error comparing dates: ${oldestTransaction.date}`, e);
                 }
             }
-            
+
             // Stop conditions:
             // 1. If we've found transactions in our range AND we've scrolled past our date range
             // 2. If we haven't gotten new transactions in several attempts
@@ -283,7 +339,7 @@ async function captureTransactionsInDateRange(startDate, endDate) {
                 console.log('Found target date range and scrolled past it, stopping scroll');
                 break;
             }
-            
+
             // Break if we're not getting any new transactions after several tries
             if (allTransactions.length === lastTransactionCount) {
                 unchangedCount++;
@@ -296,12 +352,12 @@ async function captureTransactionsInDateRange(startDate, endDate) {
                 unchangedCount = 0;
                 console.log(`Found ${allTransactions.length - lastTransactionCount} new transactions`);
             }
-            
+
             lastTransactionCount = allTransactions.length;
-            
+
             // Scroll down and adjust wait time based on whether we've found transactions in our range
             scrollDown();
-            
+
             // Adaptive wait time - shorter if we've already found some transactions in our range
             const waitTime = (foundTargetDateRange && consecutiveTargetDateMatches >= 3) ? 1000 : 1500;
             await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -311,29 +367,29 @@ async function captureTransactionsInDateRange(startDate, endDate) {
         document.body.removeChild(stopButton);
         document.body.removeChild(counterElement);
     }
-    
+
     console.log(`Total transactions found: ${allTransactions.length}`);
-    
+
     // Filter transactions by date range
     const filteredTransactions = allTransactions.filter(transaction => {
         try {
             const transactionDateTime = new Date(transaction.date).getTime();
             const isInRange = transactionDateTime >= startDateTime && transactionDateTime <= endDateTime;
-            
+
             // For debugging
             if (isInRange) {
                 console.log(`Transaction in range: ${transaction.date}, ${transaction.description}, $${transaction.amount}`);
             }
-            
+
             return isInRange;
         } catch (e) {
             console.error(`Error filtering transaction date: ${transaction.date}`, e);
             return false;
         }
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
+
     console.log(`Filtered transactions: ${filteredTransactions.length}`);
-    
+
     return { allTransactions, filteredTransactions };
 }
 
@@ -343,7 +399,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         try {
             const { startDate, endDate, csvTypes } = request;
             console.log(`Received request to capture transactions from ${startDate} to ${endDate}`);
-            
+
             // Create a visual indicator that scraping is in progress - moved to left side
             const indicator = document.createElement('div');
             indicator.style.position = 'fixed';
@@ -357,23 +413,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             indicator.style.fontSize = '14px';
             indicator.textContent = 'Scraping transactions... Please wait.';
             document.body.appendChild(indicator);
-            
+
             // Immediately respond to avoid connection issues
             sendResponse({ status: 'started', message: 'Transaction capture started' });
-            
+
             // Capture transactions
             captureTransactionsInDateRange(startDate, endDate).then(({ allTransactions, filteredTransactions }) => {
                 console.log(`Capture complete. Found ${filteredTransactions.length} transactions in range`);
-                
+
                 // Remove the indicator
                 document.body.removeChild(indicator);
-                
+
                 if (filteredTransactions.length === 0) {
                     console.warn('No transactions found in the specified date range!');
                     alert('No transactions found in the specified date range. Make sure the dates are correct and try scrolling manually on the page first.');
                     return;
                 }
-                
+
                 // Generate and save CSVs
                 if (csvTypes.allTransactions) {
                     const allCsvData = convertToCSV(filteredTransactions);
@@ -391,7 +447,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     const debitCsvData = convertToCSV(debitTransactions);
                     saveCSVToFile(debitCsvData, `expenses_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
                 }
-                
+
                 // Show completion notification - moved to left side
                 const completionNotice = document.createElement('div');
                 completionNotice.style.position = 'fixed';
@@ -405,19 +461,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 completionNotice.style.fontSize = '14px';
                 completionNotice.textContent = `Export complete! Found ${filteredTransactions.length} transactions.`;
                 document.body.appendChild(completionNotice);
-                
+
                 setTimeout(() => {
                     document.body.removeChild(completionNotice);
                 }, 5000);
-                
+
             }).catch(error => {
                 // Remove the indicator in case of error
                 document.body.removeChild(indicator);
-                
+
                 console.error('Error during transaction capture:', error);
                 alert(`Error during transaction capture: ${error.message}`);
             });
-            
+
         } catch (error) {
             console.error('Error in message handler:', error);
             sendResponse({ status: 'error', message: error.message });
