@@ -759,13 +759,49 @@ function filterEmptyTransactions(transactions) {
     );
 }
 
-function convertToCSV(transactions) {
-    const header = 'Date,Description,Amount,Category,Transaction Type,Account Name,Account Type,Provider,Labels,Notes\n';
+function convertToCSV(transactions, columns) {
+    // Default to all true if columns not provided
+    const cols = columns || {
+        date: true, description: true, amount: true, category: true,
+        type: true, account: true, notes: true, labels: true
+    };
+
+    let headerParts = [];
+    if (cols.date) headerParts.push('Date');
+    if (cols.description) headerParts.push('Description');
+    if (cols.amount) headerParts.push('Amount');
+    if (cols.category) headerParts.push('Category');
+    if (cols.type) headerParts.push('Transaction Type');
+    if (cols.account) {
+        headerParts.push('Account Name');
+        headerParts.push('Account Type');
+        headerParts.push('Provider');
+    }
+    if (cols.labels) headerParts.push('Labels');
+    if (cols.notes) headerParts.push('Notes');
+
+    const header = headerParts.join(',') + '\n';
+
     const rows = transactions.map(transaction => {
-        // Escape double quotes in strings
         const escape = (str) => String(str || '').replace(/"/g, '""');
-        return `"${convertDateFormat(transaction.date)}","${escape(transaction.description)}","${transaction.amount}","${escape(transaction.category)}","${transaction.transactionType}","${escape(transaction.accountName || '')}","${escape(transaction.accountType || '')}","${escape(transaction.provider || '')}","",""\n`;
+        let rowParts = [];
+
+        if (cols.date) rowParts.push(`"${convertDateFormat(transaction.date)}"`);
+        if (cols.description) rowParts.push(`"${escape(transaction.description)}"`);
+        if (cols.amount) rowParts.push(`"${transaction.amount}"`);
+        if (cols.category) rowParts.push(`"${escape(transaction.category)}"`);
+        if (cols.type) rowParts.push(`"${transaction.transactionType}"`);
+        if (cols.account) {
+            rowParts.push(`"${escape(transaction.accountName || '')}"`);
+            rowParts.push(`"${escape(transaction.accountType || '')}"`);
+            rowParts.push(`"${escape(transaction.provider || '')}"`);
+        }
+        if (cols.labels) rowParts.push(`""`); // Placeholder
+        if (cols.notes) rowParts.push(`""`); // Placeholder
+
+        return rowParts.join(',') + '\n';
     });
+
     return header + rows.join('');
 }
 
@@ -1127,7 +1163,7 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'captureTransactions') {
         try {
-            const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true } = request;
+            const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
             console.log(`Received request to capture transactions from ${startDate} to ${endDate} (useApi: ${useApi}, fetchAccountNames: ${fetchAccountNames})`);
 
             // Create a visual indicator that extraction is in progress - moved to left side
@@ -1153,7 +1189,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 console.log(`Capture complete. Found ${filteredTransactions.length} transactions in range`);
 
                 // Remove the indicator
-                document.body.removeChild(indicator);
+                if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
 
                 if (filteredTransactions.length === 0) {
                     console.warn('No transactions found in the specified date range!');
@@ -1163,19 +1199,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 // Generate and save CSVs
                 if (csvTypes.allTransactions) {
-                    const allCsvData = convertToCSV(filteredTransactions);
+                    const allCsvData = convertToCSV(filteredTransactions, columns);
                     saveCSVToFile(allCsvData, `all_transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
                 }
 
                 if (csvTypes.income) {
                     const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
-                    const creditCsvData = convertToCSV(creditTransactions);
+                    const creditCsvData = convertToCSV(creditTransactions, columns);
                     saveCSVToFile(creditCsvData, `income_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
                 }
 
                 if (csvTypes.expenses) {
                     const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
-                    const debitCsvData = convertToCSV(debitTransactions);
+                    const debitCsvData = convertToCSV(debitTransactions, columns);
                     saveCSVToFile(debitCsvData, `expenses_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
                 }
 
