@@ -1,0 +1,44 @@
+name: Build Extension
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        if command -v sudo >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y zip
+        else
+          apt-get update
+          apt-get install -y zip
+        fi
+    
+    - name: Create Extension ZIP
+      run: |
+        # Zip only necessary files for the extension
+        zip -r extension.zip manifest.json content.js background.js popup.html popup.css popup.js icon.png README.md
+        
+    - name: Verify ZIP creation
+      run: |
+        if [ ! -f extension.zip ]; then
+            echo "Failed to create extension.zip"
+            exit 1
+        fi
+        echo "Extension packaged successfully ($(du -h extension.zip | cut -f1))"
+
+    - name: Upload Extension Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: credit-karma-extractor
+        path: extension.zip
