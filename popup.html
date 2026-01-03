@@ -1,298 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Credit Karma Exporter</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            width: 300px;
-            padding: 20px;
-            margin: 0;
-            transition: background-color 0.3s, color 0.3s;
-        }
-        
-        h2 {
-            margin-top: 0;
-            margin-bottom: 20px;
-            font-size: 20px;
-            font-weight: 500;
-        }
-
-        .input-container {
-            margin-bottom: 15px;
-            width: 100%;
-        }
-
-        .date-label {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 14px;
-            color: #666;
-        }
-
-        input[type="date"] {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-
-        button {
-            background-color: #3f51b5;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            width: 100%;
-            margin-top: 10px;
-        }
-
-        button:hover {
-            background-color: #303f9f;
-        }
-
-        .footer {
-            margin-top: 20px;
-            font-size: 12px;
-            color: #666;
-        }
-
-        .footer a {
-            color: #3f51b5;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            transition: color 0.2s;
-        }
-
-        .footer a:hover {
-            color: #303f9f;
-        }
-
-        .footer-section {
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #eee;
-        }
-
-        .footer-section:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-        }
-
-        .footer-section h3 {
-            font-size: 14px;
-            font-weight: 600;
-            margin: 0 0 10px 0;
-            color: #444;
-        }
-
-        .footer-links {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .footer-meta {
-            font-size: 11px;
-            color: #888;
-        }
-
-        .dark-mode .footer {
-            color: #ccc;
-        }
-
-        .dark-mode .footer a {
-            color: #7986cb;
-        }
-
-        .dark-mode .footer a:hover {
-            color: #9fa8da;
-        }
-
-        .dark-mode .footer-section {
-            border-bottom-color: #333;
-        }
-
-        .dark-mode .footer-section h3 {
-            color: #eee;
-        }
-
-        .dark-mode .footer-meta {
-            color: #999;
-        }
-
-        /* Dark mode styles */
-        body.dark-mode {
-            background-color: #1a1a1a;
-            color: #ffffff;
-        }
-
-        .dark-mode input[type="date"] {
-            background-color: #333;
-            border-color: #444;
-            color: #fff;
-        }
-
-        .dark-mode .date-label {
-            color: #ccc;
-        }
-
-        .dark-mode button {
-            background-color: #7986cb;
-        }
-
-        .dark-mode button:hover {
-            background-color: #5c6bc0;
-        }
-
-        /* Theme switch styles */
-        .theme-switch {
-            display: flex;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .theme-switch__label {
-            margin-left: 10px;
-            font-size: 14px;
-        }
-
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 40px;
-            height: 20px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 20px;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
-            width: 16px;
-            left: 2px;
-            bottom: 2px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-
-        input:checked + .slider {
-            background-color: #3f51b5;
-        }
-
-        input:checked + .slider:before {
-            transform: translateX(20px);
-        }
-
-        .dark-mode input:checked + .slider {
-            background-color: #7986cb;
-        }
-
-        .csv-type-selection {
-            margin-bottom: 15px;
-        }
-        .checkbox-container {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .checkbox-container label {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 14px;
-        }
-    </style>
+    <title>Export Transactions</title>
+    <link rel="stylesheet" href="popup.css">
 </head>
-<body>
-    <h2>Export Transactions</h2>
-    
-    <div class="theme-switch">
-        <label class="switch">
-            <input type="checkbox" id="dark-mode-toggle">
-            <span class="slider"></span>
-        </label>
-        <span class="theme-switch__label">Dark Mode</span>
-    </div>
 
-    <div class="input-container">
-        <label class="date-label" for="start-date">Start Date</label>
-        <input type="date" id="start-date">
-    </div>
-
-    <div class="input-container">
-        <label class="date-label" for="end-date">End Date</label>
-        <input type="date" id="end-date">
-    </div>
-
-    <div class="csv-type-selection">
-        <h3>Select CSV Types to Export</h3>
-        <div class="checkbox-container">
-            <label>
-                <input type="checkbox" id="allTransactionsCheckbox" checked>
-                All Transactions
-            </label>
-            <label>
-                <input type="checkbox" id="incomeCheckbox">
-                Only Income
-            </label>
-            <label>
-                <input type="checkbox" id="expensesCheckbox">
-                Only Expenses
-            </label>
+<body data-theme="light">
+    <header>
+        <h1>Credit Karma Extractor</h1>
+        <div class="theme-toggle" id="theme-toggle" title="Toggle Dark Mode">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
         </div>
-    </div>
+    </header>
 
-    <button id="export-btn">Export</button>
+    <main>
+        <section class="card">
+            <h3 class="section-title">Date Range</h3>
+            <div class="input-row">
+                <div class="input-group">
+                    <label for="start-date">Start</label>
+                    <input type="date" id="start-date">
+                </div>
+                <div class="input-group">
+                    <label for="end-date">End</label>
+                    <input type="date" id="end-date">
+                </div>
+            </div>
+            <div class="quick-dates">
+                <button class="pill-btn" data-range="ytd">YTD</button>
+                <button class="pill-btn" data-range="last-month">Last Month</button>
+                <button class="pill-btn" data-range="last-year">Last Year</button>
+            </div>
+        </section>
 
-    <div class="footer">
+        <section class="card">
+            <h3 class="section-title">Settings</h3>
+            <label class="toggle-row" title="Uses the new hidden API. Much faster and deeper history.">
+                <div>
+                    <span style="display:block; font-size:12px; font-weight:500;">Use Fast API</span>
+                    <span style="font-size:10px; color:var(--text-secondary);">Recommended</span>
+                </div>
+                <div class="toggle-switch">
+                    <input type="checkbox" id="useApiCheckbox" checked>
+                    <span class="slider"></span>
+                </div>
+            </label>
+        </section>
+
+        <section class="card">
+            <h3 class="section-title">Files to Generate</h3>
+            <div class="grid-columns">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="allTransactionsCheckbox" checked> All Data
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="incomeCheckbox"> Income Only
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="expensesCheckbox"> Expenses Only
+                </label>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3 class="section-title">Columns</h3>
+            <div class="grid-columns" style="grid-template-columns: 1fr 1fr 1fr;">
+                <label class="checkbox-label"><input type="checkbox" id="col-date" checked> Date</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-desc" checked> Desc</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-amount" checked> Amount</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-category" checked> Category</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-type" checked> Type</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-account" checked> Account</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-notes" checked> Notes</label>
+                <label class="checkbox-label"><input type="checkbox" id="col-labels" checked> Labels</label>
+            </div>
+        </section>
+
+        <button id="export-btn" class="primary-btn">
+            Export Transactions
+        </button>
+    </main>
+
+    <footer>
         <div class="footer-section">
-            <h3>Analyze Your Data</h3>
+            <h4>Analyze Your Data</h4>
             <div class="footer-links">
-                <a href="https://www.creditkarma.com/networth/transactions" target="_blank">📊 Go to Credit Karma Transactions Page</a>
+                <a href="https://www.creditkarma.com/networth/transactions" target="_blank">📊 Go to Transactions
+                    Page</a>
                 <a href="https://github.com/cbangera2/BudgetLens" target="_blank">📈 BudgetLens Web Dashboard</a>
-                <a href="https://themeasureofaplan.com/budget-tracking-tool/" target="_blank">📑 TMOAP Spreadsheet Tool</a>
+                <a href="https://themeasureofaplan.com/budget-tracking-tool/" target="_blank">📑 TMOAP Spreadsheet
+                    Tool</a>
             </div>
         </div>
 
         <div class="footer-section">
-            <h3>Extension Resources</h3>
+            <h4>Resources</h4>
             <div class="footer-links">
                 <a href="https://github.com/cbangera2/CreditKarmaExtractor" target="_blank">📦 View on GitHub</a>
-                <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">🐛 Report an Issue</a>
+                <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">🐛 Report an
+                    Issue</a>
             </div>
         </div>
 
-        <div class="footer-section footer-meta">
-            <p>&copy; 2024 Chirag Bangera. All rights reserved.</p>
-            <p>This extension is not affiliated with or endorsed by Credit Karma.</p>
+        <div class="footer-meta">
+            <p>v2.0 • &copy; 2026 Chirag Bangera. Not affiliated with Credit Karma.</p>
         </div>
-    </div>
+    </footer>
+
     <script src="popup.js"></script>
 </body>
+
 </html>

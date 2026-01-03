@@ -1,27 +1,34 @@
 {
-    "manifest_version": 3,
-    "name": "Credit Karma Transactions Exporter",
-    "version": "1.2",
-    "description": "Export transactions from Credit Karma within a specified date range.",
-    "permissions": ["activeTab", "scripting"],
-    "action": {
-      "default_popup": "popup.html",
-      "default_icon": {
-        "16": "icon.png",
-        "48": "icon.png",
-        "128": "icon.png"
-      }
-    },
-    "content_scripts": [
-      {
-        "matches": ["*://www.creditkarma.com/*"],
-        "js": ["content.js"]
-      }
-    ],
-    "background": {
-      "service_worker": "background.js"
-    },
-    "content_security_policy": {
-      "extension_pages": "script-src 'self'; object-src 'self'"
+  "manifest_version": 3,
+  "name": "Credit Karma Transactions Exporter",
+  "version": "2.0",
+  "description": "Export transactions from Credit Karma within a specified date range.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
     }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.creditkarma.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }
