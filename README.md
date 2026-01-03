@@ -9,6 +9,9 @@ The **Credit Karma Transaction Extractor** allows you to instantly export your e
 
 **🎉 New in v2.0:** I've completely rewritten the engine. It now uses Credit Karma's internal API (GraphQL) to fetch thousands of transactions in seconds, capturing details like Account Names, Categories, and Merchant info that were previously inaccessible or required slow manual scraping.
 
+## Screenshots
+<img width="373" height="572" alt="image" src="https://github.com/user-attachments/assets/bc8268f8-3093-4caf-92ba-3e5e596516bb" />
+
 ## Features
 
 - **Instant Extraction**: Uses the specific `GetTransactions` API to fetch data 100x faster than scrolling.
