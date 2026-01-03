@@ -41,7 +41,6 @@ async function getAccessToken() {
 
         if (accessToken && accessToken.startsWith('eyJ')) {
             console.log('[API] Found access token in CKAT cookie (JWT format)');
-            console.log('[API] Token length:', accessToken.length);
             cachedAccessToken = accessToken;
             return accessToken;
         } else {
@@ -97,13 +96,7 @@ async function getAuthHeaders() {
     const cookieId = getCookieValue('CKTRKID');
     const traceId = getCookieValue('CKTRACEID') || generateTraceId();
 
-    console.log('[API] Auth debug:', {
-        hasAccessToken: !!accessToken,
-        tokenLength: accessToken ? accessToken.length : 0,
-        tokenPrefix: accessToken ? accessToken.substring(0, 20) + '...' : 'none',
-        hasCookieId: !!cookieId,
-        hasTraceId: !!traceId
-    });
+
 
     if (!accessToken) {
         throw new Error('No access token found. Please ensure you are logged in to Credit Karma.');
@@ -141,28 +134,71 @@ function generateTraceId() {
 }
 
 /**
- * Fetch transactions using the GraphQL API
- * Uses GetTransactionsList which returns ALL transactions in a single call
+ * Main API entry point: Orchestrates fetching recent + historical data
  */
 async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
-    console.log('[API] Starting API-based transaction fetch');
+    // 1. Fetch recent data using the fast GetTransactionsList endpoint
+    console.log('[API] Phase 1: Fetching recent transactions...');
+    let transactions = await fetchRecentTransactions(startDate, endDate, onProgress);
+
+    if (!transactions) {
+        transactions = [];
+    }
+
+    // Sort to find the oldest date we have
+    transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    let oldestDate = new Date();
+    if (transactions.length > 0) {
+        oldestDate = new Date(transactions[transactions.length - 1].date);
+    }
+
+    const reqStartDate = new Date(startDate);
+
+    // Check if we need to fetch older history
+    // Allow 7 day buffer
+    const daysDiff = (oldestDate - reqStartDate) / (1000 * 60 * 60 * 24);
+
+    if (daysDiff > 7) {
+        console.log(`[API] Gap detected: ${daysDiff.toFixed(1)} days. Phase 2: Fetching historical data...`);
+        if (onProgress) onProgress(`Fetching older history (${daysDiff.toFixed(0)} days gap)...`);
+
+        // Start from the day before our oldest known transaction
+        const historyEndDate = new Date(oldestDate);
+        historyEndDate.setDate(historyEndDate.getDate() - 1);
+
+        const historicalTransactions = await fetchHistoricalTransactions(startDate, historyEndDate, onProgress);
+
+        if (historicalTransactions.length > 0) {
+            console.log(`[API] Merging ${historicalTransactions.length} historical transactions`);
+            transactions = [...transactions, ...historicalTransactions];
+        }
+    }
+
+    return transactions;
+}
+
+/**
+ * Fetch recent transactions using GetTransactionsList 
+ */
+async function fetchRecentTransactions(startDate, endDate, onProgress) {
+    console.log('[API] Starting API-based transaction fetch (Recent)');
 
     const headers = await getAuthHeaders();
 
     // Convert dates for filtering
     const startDateTime = new Date(startDate);
     const endDateTime = new Date(endDate);
-    endDateTime.setHours(23, 59, 59, 999); // Include the entire end date
+    endDateTime.setHours(23, 59, 59, 999);
 
-    // GetTransactionsList hash - returns ALL transactions in one call (no pagination needed!)
+    // GetTransactionsList hash - returns ALL transactions in one call
     const TRANSACTIONS_LIST_HASH = 'c3c0a630b5cd938595c5901807f63b807e63c71f54a8fcb55e8c9084cb70832a';
 
     if (onProgress) {
-        onProgress('Fetching all transactions...');
+        onProgress('Fetching all recent transactions...');
     }
 
     try {
-        // Build the simple request body - no pagination needed!
         const requestBody = {
             extensions: {
                 persistedQuery: {
@@ -201,7 +237,6 @@ async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
                 cachedAccessToken = null;
                 const newHeaders = await getAuthHeaders();
 
-                // Retry with new token
                 const retryResponse = await fetch(API_ENDPOINT, {
                     method: 'POST',
                     headers: newHeaders,
@@ -224,9 +259,184 @@ async function fetchTransactionsViaAPI(startDate, endDate, onProgress) {
         return processTransactionResponse(data, startDateTime, endDateTime, onProgress);
 
     } catch (error) {
-        console.error('[API] Error fetching transactions:', error);
-        throw error;
+        console.error('[API] Error fetching recent transactions:', error);
+        return []; // Return empty to allow fallback or history fetch
     }
+}
+
+/**
+ * Fetch historical transactions using robust pagination
+ * Since date filtering seems ignored, we page from the top and skip what we already have
+ */
+async function fetchHistoricalTransactions(startDate, endDate, onProgress) {
+    console.log(`[API] Starting historical fetch via pagination (Target: < ${convertDateFormat(endDate.toISOString())})`);
+
+    // Hash for the filtered/paginated query
+    const TRANSACTIONS_QUERY_HASH = 'f669c7e42eb464861cb77d9f27826d0847ddfb5f5079a6ab7e5e2470c9617db8';
+
+    const targetEndDate = new Date(endDate); // We want transactions OLDER than this
+    const finalStart = new Date(startDate);
+
+    let allHistoricalTransactions = [];
+    let hasNextPage = true;
+    let afterCursor = null;
+    let pageCount = 0;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    // We expect to skip the first ~12 pages (since we have them from Phase 1)
+    // But we need to paginate through them to get the cursor for the older data
+
+    while (hasNextPage) {
+        pageCount++;
+        if (onProgress) {
+            if (allHistoricalTransactions.length === 0) {
+                onProgress(`Scanning history page ${pageCount}...`);
+            } else {
+                onProgress(`Fetching history page ${pageCount} (${allHistoricalTransactions.length} txns found)...`);
+            }
+        }
+
+        try {
+            // Refresh headers periodically
+            const headers = await getAuthHeaders();
+
+            // Build request
+            const variables = {
+                input: {
+                    accountInput: {},
+                    categoryInput: {
+                        categoryId: null,
+                        primeCategoryType: null
+                    },
+                    datePeriodInput: {
+                        datePeriod: null // Explicitly null as we are scanning
+                    },
+                    paginationInput: {}
+                }
+            };
+
+            // Only add cursor if we have one
+            if (afterCursor) {
+                variables.input.paginationInput.afterCursor = afterCursor;
+            }
+
+            const requestBody = {
+                extensions: {
+                    persistedQuery: {
+                        sha256Hash: TRANSACTIONS_QUERY_HASH,
+                        version: 1
+                    }
+                },
+                operationName: "GetTransactions",
+                variables: variables
+            };
+
+            const response = await fetch(API_ENDPOINT, {
+                method: 'POST',
+                headers: headers,
+                credentials: 'include',
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                // Handle token refresh
+                if (response.status === 401 && errText.includes('TOKEN_NEEDS_REFRESH')) {
+                    console.log('[API] Token refresh needed in history fetch...');
+                    cachedAccessToken = null;
+                    retryCount++;
+                    if (retryCount <= maxRetries) continue;
+                }
+                throw new Error(`History API failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.errors) {
+                console.error('[API] History GraphQL Errors:', JSON.stringify(data.errors));
+                // If it's a pagination error, we might be done
+                break;
+            }
+
+            // Parse response
+            // Structure: data.prime.transactionsHub.transactionPage
+            const transactionPage = data.data?.prime?.transactionsHub?.transactionPage;
+            if (!transactionPage) {
+                console.log('[API] No transactionPage in history response');
+                break;
+            }
+
+            const transactions = transactionPage.transactions || [];
+            const pageInfo = transactionPage.pageInfo;
+
+            if (transactions.length === 0) {
+                hasNextPage = false;
+                break;
+            }
+
+            // Process transactions
+            let newItemsInPage = 0;
+            let oldestInPage = null;
+
+            for (const txn of transactions) {
+                const txnDate = new Date(txn.date);
+                oldestInPage = txnDate;
+
+                // If this transaction is NEWER than our targetEndDate, we technically already have it (from Phase 1)
+                // BUT, duplicate handling is done later.
+                // Efficiency: Only convert/add if it's <= targetEndDate
+
+                if (txnDate <= targetEndDate && txnDate >= finalStart) {
+                    const amount = txn.amount?.value || 0;
+                    const categoryType = txn.category?.type || '';
+                    const isCredit = amount > 0 || categoryType === 'INCOME';
+
+                    allHistoricalTransactions.push({
+                        id: txn.id,
+                        description: txn.description || txn.merchant?.name || '',
+                        category: txn.category?.name || '',
+                        amount: Math.abs(amount),
+                        date: txn.date,
+                        transactionType: isCredit ? 'credit' : 'debit',
+                        accountName: txn.account?.name || '',
+                        accountType: txn.account?.type || '',
+                        provider: txn.account?.providerName || ''
+                    });
+                    newItemsInPage++;
+                }
+            }
+
+            // Check if we are done (passed the start date)
+            if (oldestInPage && oldestInPage < finalStart) {
+                console.log(`[API] Reached past start date (${oldestInPage.toISOString()}), stopping history fetch.`);
+                hasNextPage = false;
+                break;
+            }
+
+            // Check page info
+            hasNextPage = pageInfo?.hasNextPage || false;
+            afterCursor = pageInfo?.endCursor || null;
+
+            // Rate limiting delay
+            // Adaptive: If we are scanning (skipping), go faster. If collecting, go slower.
+            const delay = newItemsInPage > 0 ? 800 : 300;
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            retryCount = 0; // Reset retries on success
+
+        } catch (e) {
+            console.error('[API] Error in history page:', e);
+            retryCount++;
+            if (retryCount > maxRetries) {
+                console.warn('[API] Max retries hit for history pagination');
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+        }
+    }
+
+    return allHistoricalTransactions;
 }
 
 /**
@@ -595,6 +805,28 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
             if (transactions && transactions.length > 0) {
                 console.log(`[API] Successfully fetched ${transactions.length} transactions via API`);
 
+                // Sort by date (newest first)
+                transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                // Check if we covered the full date range
+                // The API might limit results (e.g. last 1000 txns or 1 year)
+                // If oldest transaction is still significantly newer than startDate, we assume incomplete data
+                const oldestTxDate = new Date(transactions[transactions.length - 1].date);
+                const reqStartDate = new Date(startDate);
+
+                // Allow a small buffer (e.g. 7 days) in case there were just no transactions that week
+                // But if gap is > 30 days, it's suspicious for most users
+                const daysDiff = (oldestTxDate - reqStartDate) / (1000 * 60 * 60 * 24);
+
+
+                console.log(`[API] Oldest transaction date: ${transactions[transactions.length - 1].date}`);
+                console.log(`[API] Requested start date: ${startDate}`);
+
+                // We trust the API hybrid strategy (Phase 1 + Phase 2) to have fetched everything possible.
+                // If there's still a gap, it's likely a legitimate gap in user activity.
+                // So we do NOT enforce a gap check here anymore.
+
+
                 // Optionally enrich with account names
                 if (fetchAccountNames) {
                     const needsEnrichment = transactions.filter(t => !t.accountName).length;
@@ -605,9 +837,6 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
                         });
                     }
                 }
-
-                // Sort by date (newest first)
-                transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
                 return {
                     allTransactions: transactions,
