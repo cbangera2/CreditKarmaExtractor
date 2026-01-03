@@ -2,10 +2,16 @@
 // API-Based Transaction Extraction
 // ============================================
 
-const API_ENDPOINT = 'https://api.creditkarma.com/graphql';
-const CLIENT_NAME = 'prime_web';
-const CLIENT_VERSION = '2.0.8';
-const DEVICE_TYPE = 'Desktop';
+const CONFIG = {
+    API_ENDPOINT: 'https://api.creditkarma.com/graphql',
+    CLIENT_NAME: 'prime_web',
+    CLIENT_VERSION: '2.0.8',
+    DEVICE_TYPE: 'Desktop',
+    // GraphQL Operation Hashes (APQ)
+    // These may need to be updated if Credit Karma updates their API schema
+    TRANSACTIONS_LIST_HASH: 'c3c0a630b5cd938595c5901807f63b807e63c71f54a8fcb55e8c9084cb70832a',
+    TRANSACTIONS_QUERY_HASH: 'f669c7e42eb464861cb77d9f27826d0847ddfb5f5079a6ab7e5e2470c9617db8'
+};
 
 // Cache for the access token
 let cachedAccessToken = null;
@@ -106,10 +112,10 @@ async function getAuthHeaders() {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
-        'ck-client-name': CLIENT_NAME,
-        'ck-client-version': CLIENT_VERSION,
+        'ck-client-name': CONFIG.CLIENT_NAME,
+        'ck-client-version': CONFIG.CLIENT_VERSION,
         'ck-cookie-id': cookieId || '',
-        'ck-device-type': DEVICE_TYPE,
+        'ck-device-type': CONFIG.DEVICE_TYPE,
         'ck-trace-id': traceId
     };
 }
@@ -192,7 +198,7 @@ async function fetchRecentTransactions(startDate, endDate, onProgress, signal) {
     endDateTime.setHours(23, 59, 59, 999);
 
     // GetTransactionsList hash - returns ALL transactions in one call
-    const TRANSACTIONS_LIST_HASH = 'c3c0a630b5cd938595c5901807f63b807e63c71f54a8fcb55e8c9084cb70832a';
+    // Uses CONFIG.TRANSACTIONS_LIST_HASH
 
     if (onProgress) {
         onProgress('Fetching all recent transactions...');
@@ -202,7 +208,7 @@ async function fetchRecentTransactions(startDate, endDate, onProgress, signal) {
         const requestBody = {
             extensions: {
                 persistedQuery: {
-                    sha256Hash: TRANSACTIONS_LIST_HASH,
+                    sha256Hash: CONFIG.TRANSACTIONS_LIST_HASH,
                     version: 1
                 }
             },
@@ -220,7 +226,7 @@ async function fetchRecentTransactions(startDate, endDate, onProgress, signal) {
 
         console.log('[API] Sending GetTransactionsList request...');
 
-        const response = await fetch(API_ENDPOINT, {
+        const response = await fetch(CONFIG.API_ENDPOINT, {
             method: 'POST',
             headers: headers,
             credentials: 'include',
@@ -238,7 +244,7 @@ async function fetchRecentTransactions(startDate, endDate, onProgress, signal) {
                 cachedAccessToken = null;
                 const newHeaders = await getAuthHeaders();
 
-                const retryResponse = await fetch(API_ENDPOINT, {
+                const retryResponse = await fetch(CONFIG.API_ENDPOINT, {
                     method: 'POST',
                     headers: newHeaders,
                     credentials: 'include',
@@ -273,7 +279,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
     console.log(`[API] Starting historical fetch via pagination (Target: < ${convertDateFormat(endDate.toISOString())})`);
 
     // Hash for the filtered/paginated query
-    const TRANSACTIONS_QUERY_HASH = 'f669c7e42eb464861cb77d9f27826d0847ddfb5f5079a6ab7e5e2470c9617db8';
+    // Uses CONFIG.TRANSACTIONS_QUERY_HASH
 
     const targetEndDate = new Date(endDate); // We want transactions OLDER than this
     const finalStart = new Date(startDate);
@@ -330,7 +336,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
             const requestBody = {
                 extensions: {
                     persistedQuery: {
-                        sha256Hash: TRANSACTIONS_QUERY_HASH,
+                        sha256Hash: CONFIG.TRANSACTIONS_QUERY_HASH,
                         version: 1
                     }
                 },
@@ -338,7 +344,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
                 variables: variables
             };
 
-            const response = await fetch(API_ENDPOINT, {
+            const response = await fetch(CONFIG.API_ENDPOINT, {
                 method: 'POST',
                 headers: headers,
                 credentials: 'include',
@@ -456,6 +462,13 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
 function processTransactionResponse(data, startDateTime, endDateTime, onProgress) {
     if (data.errors && data.errors.length > 0) {
         console.error('[API] GraphQL errors:', JSON.stringify(data.errors, null, 2));
+
+        // Check for outdated persistent queries
+        const errorStr = JSON.stringify(data.errors);
+        if (errorStr.includes('PersistedQueryNotFound') || errorStr.includes('PERSISTED_QUERY_NOT_FOUND')) {
+            throw new Error('API Schema mismatch. The extension likely needs an update to match Credit Karma\'s new API.');
+        }
+
         throw new Error(`GraphQL error: ${data.errors[0].message}`);
     }
 
@@ -574,7 +587,7 @@ async function fetchTransactionDetail(transactionUrn) {
             `
         };
 
-        const response = await fetch(API_ENDPOINT, {
+        const response = await fetch(CONFIG.API_ENDPOINT, {
             method: 'POST',
             headers: headers,
             credentials: 'include',
@@ -890,11 +903,12 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
 
     // Try API-based extraction first if enabled
     if (useApi) {
+        let transactions = [];
         try {
             console.log('[API] Attempting API-based extraction...');
             counterElement.textContent = 'Connecting to Credit Karma API...';
 
-            let transactions = await fetchTransactionsViaAPI(startDate, endDate, (msg) => {
+            transactions = await fetchTransactionsViaAPI(startDate, endDate, (msg) => {
                 console.log('[API Progress]', msg);
                 counterElement.textContent = msg;
             }, abortController.signal);
@@ -950,7 +964,11 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
                 console.log('[API] Extraction aborted by user.');
                 if (stopButton.parentNode) stopButton.parentNode.removeChild(stopButton);
                 if (counterElement.parentNode) counterElement.parentNode.removeChild(counterElement);
-                return { allTransactions: [], filteredTransactions: [] };
+                // Return partial results if we have them
+                return {
+                    allTransactions: transactions || [],
+                    filteredTransactions: transactions || []
+                };
             }
             console.warn('[API] API extraction failed, falling back to scroll method:', apiError.message);
             console.error('[API] Full error:', apiError);
