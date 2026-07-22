@@ -2,46 +2,74 @@ name: Build Extension
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-extension-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    
+  validate:
+    name: Test and validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
     steps:
-    - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-    - name: Run tests
-      run: node --test
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
 
-    - name: Install dependencies
-      run: |
-        if command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update
-          sudo apt-get install -y zip
-        else
-          apt-get update
-          apt-get install -y zip
-        fi
-    
-    - name: Create Extension ZIP
-      run: |
-        # Zip only necessary files for the extension
-        zip -r extension.zip manifest.json content.js background.js popup.html popup.css popup.js icon.png README.md
-        
-    - name: Verify ZIP creation
-      run: |
-        if [ ! -f extension.zip ]; then
-            echo "Failed to create extension.zip"
-            exit 1
-        fi
-        echo "Extension packaged successfully ($(du -h extension.zip | cut -f1))"
+      - name: Check JavaScript syntax
+        run: |
+          node --check background.js
+          node --check content.js
+          node --check popup.js
 
-    - name: Upload Extension Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: credit-karma-extractor
-        path: extension.zip
+      - name: Run tests
+        run: node --test
+
+  package:
+    name: Package extension
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Create extension archive
+        run: >-
+          zip -X extension.zip
+          manifest.json content.js background.js popup.html popup.css popup.js
+          icon.png README.md
+
+      - name: Verify archive integrity
+        run: |
+          unzip -t extension.zip
+          sha256sum extension.zip > extension.zip.sha256
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: credit-karma-extractor
+          path: |
+            extension.zip
+            extension.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
