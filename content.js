@@ -10,7 +10,9 @@ const CONFIG = {
     // GraphQL Operation Hashes (APQ)
     // These may need to be updated if Credit Karma updates their API schema
     TRANSACTIONS_LIST_HASH: 'c3c0a630b5cd938595c5901807f63b807e63c71f54a8fcb55e8c9084cb70832a',
-    TRANSACTIONS_QUERY_HASH: 'f669c7e42eb464861cb77d9f27826d0847ddfb5f5079a6ab7e5e2470c9617db8'
+    TRANSACTIONS_QUERY_HASH: 'f669c7e42eb464861cb77d9f27826d0847ddfb5f5079a6ab7e5e2470c9617db8',
+    NET_WORTH_HASH: '3b00cd72288d3dbd053f2d6d3310a2ab95f6927c7ea14843503c498e3c384702',
+    ACCOUNT_L2_HASH: 'ae3d3cc725b67ede7ec9216518daf4c06695c583301d6749881a1a55a9c061f2'
 };
 
 // Cache for the access token
@@ -137,6 +139,139 @@ function generateTraceId() {
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
+}
+
+/**
+ * Run one of Credit Karma's persisted GraphQL queries, retrying once when the
+ * access token needs to be refreshed.
+ */
+async function fetchPersistedQuery(operationName, sha256Hash, variables, signal) {
+    const requestBody = {
+        extensions: {
+            persistedQuery: {
+                sha256Hash,
+                version: 1
+            }
+        },
+        operationName,
+        variables
+    };
+
+    const sendRequest = async () => fetch(CONFIG.API_ENDPOINT, {
+        method: 'POST',
+        headers: await getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(requestBody),
+        signal
+    });
+
+    let response = await sendRequest();
+    if (response.status === 401) {
+        const errorText = await response.text();
+        if (errorText.includes('TOKEN_NEEDS_REFRESH')) {
+            cachedAccessToken = null;
+            response = await sendRequest();
+        } else {
+            throw new Error(`${operationName} request failed: 401`);
+        }
+    }
+
+    if (!response.ok) {
+        throw new Error(`${operationName} request failed: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (data.errors?.length) {
+        throw new Error(`${operationName} failed: ${data.errors[0].message}`);
+    }
+
+    return data;
+}
+
+function findVisualizationGroup(value) {
+    if (!value || typeof value !== 'object') return null;
+    if (Array.isArray(value.dataVisualizationGroupDataSets)) return value;
+
+    for (const child of Object.values(value)) {
+        const match = findVisualizationGroup(child);
+        if (match) return match;
+    }
+
+    return null;
+}
+
+function formattedTextValue(formattedText) {
+    return formattedText?.spans?.map(span => span.text || '').join('').trim() || '';
+}
+
+function graphDateToISO(dateLabel) {
+    const parsedDate = new Date(dateLabel);
+    if (Number.isNaN(parsedDate.getTime())) return null;
+
+    const year = parsedDate.getFullYear();
+    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(parsedDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Extract the complete graph series. Credit Karma returns overlapping 1M, 3M,
+ * 6M, YTD, 1Y, and All datasets, so using All avoids duplicate dates.
+ */
+function extractGraphHistory(data, rootKey, startDate, endDate) {
+    const graph = findVisualizationGroup(data.data?.prime?.[rootKey]);
+    if (!graph) {
+        throw new Error('Credit Karma did not return graph history. The API may have changed.');
+    }
+
+    const datasets = graph.dataVisualizationGroupDataSets;
+    const allDataset = datasets.find(dataset => dataset.dataSetKey === 'All');
+    const selectedDataset = allDataset || datasets.reduce((largest, dataset) => {
+        const pointCount = dataset.dataVisualizationDataSet?.lines
+            ?.reduce((count, line) => count + (line.points?.length || 0), 0) || 0;
+        return pointCount > largest.pointCount ? { dataset, pointCount } : largest;
+    }, { dataset: null, pointCount: -1 }).dataset;
+
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T23:59:59.999`);
+    const valuesByDate = new Map();
+
+    for (const line of selectedDataset?.dataVisualizationDataSet?.lines || []) {
+        for (const point of line.points || []) {
+            const date = graphDateToISO(formattedTextValue(point.xValueLabel));
+            const value = Number(point.yValue);
+            if (!date || !Number.isFinite(value)) continue;
+
+            const parsedDate = new Date(`${date}T12:00:00`);
+            if (parsedDate >= start && parsedDate <= end) {
+                valuesByDate.set(date, value);
+            }
+        }
+    }
+
+    return Array.from(valuesByDate, ([date, value]) => ({ date, value }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fetchGraphHistory(type, startDate, endDate, signal) {
+    const isInvestments = type === 'investments';
+    const data = await fetchPersistedQuery(
+        isInvestments ? 'getAccountL2Page' : 'getNetworthPage',
+        isInvestments ? CONFIG.ACCOUNT_L2_HASH : CONFIG.NET_WORTH_HASH,
+        {
+            input: isInvestments
+                ? { accountType: 'investments' }
+                : { queryStringParameters: '' }
+        },
+        signal
+    );
+
+    return extractGraphHistory(
+        data,
+        isInvestments ? 'networthByAccountType' : 'networth',
+        startDate,
+        endDate
+    );
 }
 
 /**
@@ -920,6 +1055,11 @@ function convertToCSV(transactions, columns) {
     return header + rows.join('');
 }
 
+function convertGraphHistoryToCSV(history, valueColumn) {
+    const rows = history.map(point => `"${point.date}","${point.value}"\n`);
+    return `Date,${valueColumn}\n${rows.join('')}`;
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -1307,7 +1447,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'captureTransactions') {
         try {
             const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
-            console.log(`Received request to capture transactions from ${startDate} to ${endDate} (useApi: ${useApi}, fetchAccountNames: ${fetchAccountNames})`);
+            const needsTransactions = csvTypes.allTransactions || csvTypes.income || csvTypes.expenses;
+            console.log(`Received export request from ${startDate} to ${endDate}`);
 
             // Create a visual indicator that extraction is in progress - moved to left side
             const indicator = document.createElement('div');
@@ -1321,42 +1462,86 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             indicator.style.borderRadius = '5px';
             indicator.style.zIndex = '9999';
             indicator.style.fontSize = '14px';
-            indicator.textContent = useApi ? 'Extracting transactions via API...' : 'Extracting transactions via scrolling...';
+            indicator.textContent = 'Exporting selected Credit Karma data...';
             document.body.appendChild(indicator);
 
             // Immediately respond to avoid connection issues
-            sendResponse({ status: 'started', message: 'Transaction capture started' });
+            sendResponse({ status: 'started', message: 'Data export started' });
 
-            // Capture transactions (API-first with scroll fallback)
-            captureTransactionsInDateRange(startDate, endDate, fetchAccountNames, useApi).then(({ allTransactions, filteredTransactions }) => {
-                console.log(`Capture complete. Found ${filteredTransactions.length} transactions in range`);
+            const exportData = async () => {
+                let filteredTransactions = [];
+                if (needsTransactions) {
+                    ({ filteredTransactions } = await captureTransactionsInDateRange(
+                        startDate,
+                        endDate,
+                        fetchAccountNames,
+                        useApi
+                    ));
+                }
 
-                // Remove the indicator
+                if (needsTransactions && filteredTransactions.length === 0) {
+                    console.warn('No transactions found in the specified date range!');
+                } else {
+                    if (csvTypes.allTransactions) {
+                        const allCsvData = convertToCSV(filteredTransactions, columns);
+                        saveCSVToFile(allCsvData, `all_transactions_${startDate}_to_${endDate}.csv`);
+                    }
+
+                    if (csvTypes.income) {
+                        const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
+                        const creditCsvData = convertToCSV(creditTransactions, columns);
+                        saveCSVToFile(creditCsvData, `income_${startDate}_to_${endDate}.csv`);
+                    }
+
+                    if (csvTypes.expenses) {
+                        const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
+                        const debitCsvData = convertToCSV(debitTransactions, columns);
+                        saveCSVToFile(debitCsvData, `expenses_${startDate}_to_${endDate}.csv`);
+                    }
+                }
+
+                const graphExports = [];
+                if (csvTypes.netWorth) {
+                    graphExports.push({
+                        type: 'netWorth',
+                        fileName: `net_worth_${startDate}_to_${endDate}.csv`,
+                        valueColumn: 'Net Worth'
+                    });
+                }
+                if (csvTypes.investments) {
+                    graphExports.push({
+                        type: 'investments',
+                        fileName: `investments_${startDate}_to_${endDate}.csv`,
+                        valueColumn: 'Investment Value'
+                    });
+                }
+
+                const graphResults = await Promise.all(graphExports.map(async exportConfig => ({
+                    ...exportConfig,
+                    history: await fetchGraphHistory(exportConfig.type, startDate, endDate)
+                })));
+
+                for (const result of graphResults) {
+                    if (result.history.length === 0) {
+                        console.warn(`No ${result.type} graph values found in the selected date range.`);
+                        continue;
+                    }
+                    saveCSVToFile(
+                        convertGraphHistoryToCSV(result.history, result.valueColumn),
+                        result.fileName
+                    );
+                }
+
+                return { transactionCount: filteredTransactions.length, graphResults };
+            };
+
+            exportData().then(({ transactionCount, graphResults }) => {
                 if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
 
-                if (filteredTransactions.length === 0) {
-                    console.warn('No transactions found in the specified date range!');
-                    alert('No transactions found in the specified date range. Make sure the dates are correct and try scrolling manually on the page first.');
-                    return;
-                }
-
-                // Generate and save CSVs
-                if (csvTypes.allTransactions) {
-                    const allCsvData = convertToCSV(filteredTransactions, columns);
-                    saveCSVToFile(allCsvData, `all_transactions_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
-                }
-
-                if (csvTypes.income) {
-                    const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
-                    const creditCsvData = convertToCSV(creditTransactions, columns);
-                    saveCSVToFile(creditCsvData, `income_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
-                }
-
-                if (csvTypes.expenses) {
-                    const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
-                    const debitCsvData = convertToCSV(debitTransactions, columns);
-                    saveCSVToFile(debitCsvData, `expenses_${startDate.replace(/\//g, '-')}_to_${endDate.replace(/\//g, '-')}.csv`);
-                }
+                const graphPointCount = graphResults.reduce((count, result) => count + result.history.length, 0);
+                const summaryParts = [];
+                if (needsTransactions) summaryParts.push(`${transactionCount} transactions`);
+                if (graphResults.length) summaryParts.push(`${graphPointCount} graph values`);
 
                 // Show completion notification - moved to left side
                 const completionNotice = document.createElement('div');
@@ -1369,7 +1554,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 completionNotice.style.borderRadius = '5px';
                 completionNotice.style.zIndex = '9999';
                 completionNotice.style.fontSize = '14px';
-                completionNotice.textContent = `Export complete! Found ${filteredTransactions.length} transactions.`;
+                completionNotice.textContent = `Export complete: ${summaryParts.join(' and ')}.`;
                 document.body.appendChild(completionNotice);
 
                 setTimeout(() => {
@@ -1378,10 +1563,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             }).catch(error => {
                 // Remove the indicator in case of error
-                document.body.removeChild(indicator);
+                if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
 
-                console.error('Error during transaction capture:', error);
-                alert(`Error during transaction capture: ${error.message}`);
+                console.error('Error during data export:', error);
+                alert(`Error during data export: ${error.message}`);
             });
 
         } catch (error) {
