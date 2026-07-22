@@ -2,43 +2,74 @@ name: Build Extension
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-extension-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    
+  validate:
+    name: Test and validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
     steps:
-    - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-    - name: Install dependencies
-      run: |
-        if command -v sudo >/dev/null 2>&1; then
-          sudo apt-get update
-          sudo apt-get install -y zip
-        else
-          apt-get update
-          apt-get install -y zip
-        fi
-    
-    - name: Create Extension ZIP
-      run: |
-        # Zip only necessary files for the extension
-        zip -r extension.zip manifest.json content.js background.js popup.html popup.css popup.js icon.png README.md
-        
-    - name: Verify ZIP creation
-      run: |
-        if [ ! -f extension.zip ]; then
-            echo "Failed to create extension.zip"
-            exit 1
-        fi
-        echo "Extension packaged successfully ($(du -h extension.zip | cut -f1))"
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
 
-    - name: Upload Extension Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: credit-karma-extractor
-        path: extension.zip
+      - name: Check JavaScript syntax
+        run: |
+          node --check background.js
+          node --check content.js
+          node --check popup.js
+
+      - name: Run tests
+        run: node --test
+
+  package:
+    name: Package extension
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create extension archive
+        run: >-
+          zip -X extension.zip
+          manifest.json content.js background.js popup.html popup.css popup.js
+          icon.png README.md
+
+      - name: Verify archive integrity
+        run: |
+          unzip -t extension.zip
+          sha256sum extension.zip > extension.zip.sha256
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: credit-karma-extractor
+          path: |
+            extension.zip
+            extension.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
