@@ -49,7 +49,7 @@ Once you have your CSVs, you can use them with:
 
 ## Changelog
 
-### Version 2.1
+### Version 2.1 (July 2026)
 - Added separate CSV exports for Net Worth and Investment graph values.
 - Wealth exports use the complete graph dataset and respect the selected date range.
 
