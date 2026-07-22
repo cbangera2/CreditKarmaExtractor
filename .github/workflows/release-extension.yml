@@ -1,0 +1,122 @@
+name: Release Extension
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/release-extension.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-extension-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check background.js
+          node --check content.js
+          node --check popup.js
+
+      - name: Run tests
+        run: node --test
+
+      - name: Test extension packaging
+        run: |
+          git archive \
+            --format=zip \
+            --output="${RUNNER_TEMP}/extension-test.zip" \
+            HEAD -- \
+            manifest.json content.js background.js popup.html popup.css popup.js icon.png
+          unzip -t "${RUNNER_TEMP}/extension-test.zip"
+
+  release:
+    name: Publish GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      ARCHIVE_NAME: credit-karma-data-extractor-${{ github.ref_name }}.zip
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Verify tag matches manifest version
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const tag = process.env.RELEASE_TAG;
+          if (!/^v\d+\.\d+(?:\.\d+){0,2}$/.test(tag)) {
+              throw new Error(`Release tag must look like v2.1 or v2.1.0; received ${tag}`);
+          }
+
+          const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+          const tagVersion = tag.slice(1);
+          if (manifest.version !== tagVersion) {
+              throw new Error(
+                  `Tag ${tag} does not match manifest version ${manifest.version}`
+              );
+          }
+          NODE
+
+      - name: Create release archive and checksum
+        run: |
+          git archive \
+            --format=zip \
+            --output="${ARCHIVE_NAME}" \
+            HEAD -- \
+            manifest.json content.js background.js popup.html popup.css popup.js icon.png
+          unzip -t "${ARCHIVE_NAME}"
+          sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+
+      - name: Attest release archive
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ env.ARCHIVE_NAME }}
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${RELEASE_TAG}"
+          "${ARCHIVE_NAME}"
+          "${ARCHIVE_NAME}.sha256"
+          --verify-tag
+          --generate-notes
+          --latest
+          --title "Credit Karma Data Extractor ${RELEASE_TAG}"
