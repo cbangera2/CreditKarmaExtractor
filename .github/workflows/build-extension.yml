@@ -14,6 +14,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Run tests
+      run: node --test
+
     - name: Install dependencies
       run: |
         if command -v sudo >/dev/null 2>&1; then

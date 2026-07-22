@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Credit Karma Transactions Exporter",
-  "version": "2.0",
-  "description": "Export transactions from Credit Karma within a specified date range.",
+  "name": "Credit Karma Data Exporter",
+  "version": "2.1",
+  "description": "Export transactions, net worth history, and investment values from Credit Karma.",
   "permissions": [
     "activeTab",
     "scripting"

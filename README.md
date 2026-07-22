@@ -1,4 +1,4 @@
-# Credit Karma Transaction Extractor Chrome Extension
+# Credit Karma Data Extractor Chrome Extension
 
 [![Build Extension](https://github.com/cbangera2/CreditKarmaExtractor/actions/workflows/build-extension.yml/badge.svg)](https://github.com/cbangera2/CreditKarmaExtractor/actions/workflows/build-extension.yml)
 ![GitHub stars](https://img.shields.io/github/stars/cbangera2/CreditKarmaExtractor?style=social)
@@ -6,7 +6,7 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/cbangera2/CreditKarmaExtractor)
 ![GitHub last commit](https://img.shields.io/github/last-commit/cbangera2/CreditKarmaExtractor?color=red)
 
-The **Credit Karma Transaction Extractor** allows you to instantly export your entire transaction history from Credit Karma to CSV.
+The **Credit Karma Data Extractor** exports transaction history, net worth history, and investment values from Credit Karma to CSV.
 
 **🎉 New in v2.0:** I've completely rewritten the engine. It now uses Credit Karma's internal API (GraphQL) to fetch thousands of transactions in seconds, capturing details like Account Names, Categories, and Merchant info that were previously inaccessible or required slow manual scraping.
 
@@ -21,6 +21,7 @@ The **Credit Karma Transaction Extractor** allows you to instantly export your e
 - **Modern UI**: Beautiful interface with Dark Mode support and Quick Date presets (YTD, Last Year).
 - **Instant Stop**: Cancel huge extractions immediately without losing data—what you've fetched is saved.
 - **Smart Export**: Automatically generates `All Data`, `Income Only`, and `Expenses Only` files.
+- **Wealth History**: Export the full Net Worth and Investment graph series as separate, date-filtered CSV files.
 
 ## Quick Start
 
@@ -30,11 +31,12 @@ The **Credit Karma Transaction Extractor** allows you to instantly export your e
    - Enable **Developer mode** (top right toggle).
    - Click **Load unpacked** and select the extension directory.
 
-2. **Export Transactions**:
+2. **Export Data**:
    - Go to [Credit Karma Transactions](https://www.creditkarma.com/networth/transactions).
    - Click the extension icon.
    - Select your date range (or click "Last Year").
-   - Click **Export Transactions**.
+   - Choose the transaction and/or wealth-history files to generate.
+   - Click **Export Selected Data**.
    - Watch the progress indicator and wait for your CSV files!
 
 ## Analyze Your Data
@@ -46,6 +48,10 @@ Once you have your CSVs, you can use them with:
 3. Any spreadsheet software (Excel, Google Sheets, Numbers).
 
 ## Changelog
+
+### Version 2.1
+- Added separate CSV exports for Net Worth and Investment graph values.
+- Wealth exports use the complete graph dataset and respect the selected date range.
 
 ### Version 2.0 (January 2026)
 - **Major Rewrite**: Switched to GraphQL API-based extraction.

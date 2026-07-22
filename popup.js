@@ -61,8 +61,15 @@ document.getElementById('export-btn').addEventListener('click', () => {
     const csvTypes = {
         allTransactions: document.getElementById('allTransactionsCheckbox').checked,
         income: document.getElementById('incomeCheckbox').checked,
-        expenses: document.getElementById('expensesCheckbox').checked
+        expenses: document.getElementById('expensesCheckbox').checked,
+        netWorth: document.getElementById('netWorthCheckbox').checked,
+        investments: document.getElementById('investmentsCheckbox').checked
     };
+
+    if (!Object.values(csvTypes).some(Boolean)) {
+        alert('Please select at least one file to generate.');
+        return;
+    }
 
     // Get Column Preferences
     const columns = {
