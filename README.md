@@ -52,7 +52,7 @@ Once you have your CSVs, you can use them with:
 ### Version 2.1 (July 2026)
 - Added separate CSV exports for Net Worth and Investment graph values.
 - Wealth exports use the complete graph dataset and respect the selected date range.
-- Updated transaction exports to preserve user-corrected categories through the paginated `transactionsHub` API, with safer pagination and a fallback for incomplete responses.
+- Updated transaction exports to preserve user-corrected categories through the paginated `transactionsHub` API, with safer pagination and a fallback for incomplete responses—thanks to [@CarterDunn](https://github.com/CarterDunn) for the contribution.
 - Added automatic content-script reinjection and a raw API JSON debug export for easier troubleshooting.
 
 ### Version 2.0 (January 2026)
@@ -78,7 +78,3 @@ Contributions are welcome! Feel free to:
 
 - Developed by [Chirag Bangera](https://github.com/cbangera2).
 - Not affiliated with or endorsed by Credit Karma.
-
-## Contributors
-
-- [Carter Dunn (@CarterDunn)](https://github.com/CarterDunn) — contributed the work behind corrected transaction categories, safer API pagination, and export diagnostics in [PR #9](https://github.com/cbangera2/CreditKarmaExtractor/pull/9).
