@@ -49,13 +49,28 @@ document.querySelectorAll('.pill-btn').forEach(btn => {
  * content script — e.g. the page was loaded before the extension was updated),
  * inject content.js into the tab and retry once.
  */
-function sendMessageWithInjection(tabId, message, callback) {
+function sendMessageWithInjection(tab, message, callback) {
+    const tabId = tab.id;
     chrome.tabs.sendMessage(tabId, message, (response) => {
         if (!chrome.runtime.lastError) {
             callback(response, null);
             return;
         }
         console.warn('Content script not responding, injecting fresh copy...', chrome.runtime.lastError.message);
+
+        let tabUrl;
+        try {
+            tabUrl = new URL(tab.url);
+        } catch (error) {
+            callback(null, 'The active tab does not have a valid URL.');
+            return;
+        }
+
+        if (tabUrl.protocol !== 'https:' || tabUrl.hostname !== 'www.creditkarma.com') {
+            callback(null, 'Open a page on https://www.creditkarma.com before using the extension.');
+            return;
+        }
+
         chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }, () => {
             if (chrome.runtime.lastError) {
                 callback(null, chrome.runtime.lastError.message);
@@ -82,14 +97,14 @@ document.getElementById('debug-raw-btn').addEventListener('click', () => {
             btn.disabled = false;
             return;
         }
-        sendMessageWithInjection(tabs[0].id, { action: 'debugDumpRaw', maxHubPages: 5 }, (response, error) => {
+        sendMessageWithInjection(tabs[0], { action: 'debugDumpRaw', maxHubPages: 5 }, (response, error) => {
             if (error) {
                 alert(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`);
+            } else if (response?.status === 'error') {
+                alert(`Raw API dump failed: ${response.message}`);
             }
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.disabled = false;
-            }, 3000);
+            btn.textContent = originalText;
+            btn.disabled = false;
         });
     });
 });
@@ -140,7 +155,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
             return;
         }
 
-        sendMessageWithInjection(tabs[0].id, {
+        sendMessageWithInjection(tabs[0], {
             action: 'captureTransactions',
             startDate,
             endDate,

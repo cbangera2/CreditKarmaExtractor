@@ -158,16 +158,22 @@ async function fetchTransactionsViaAPI(startDate, endDate, onProgress, signal) {
     const endDateTime = new Date(endDate);
     endDateTime.setHours(23, 59, 59, 999);
 
-    const transactions = await fetchHistoricalTransactions(startDate, endDateTime, onProgress, signal);
+    const hubResult = await fetchHistoricalTransactions(startDate, endDateTime, onProgress, signal);
 
-    if (transactions.length > 0) {
-        return transactions;
+    if (hubResult.aborted) {
+        return hubResult.transactions;
+    }
+
+    if (hubResult.completed && hubResult.transactions.length > 0) {
+        return hubResult.transactions;
     }
 
     // Fallback: fast list endpoint. WARNING: its categories do not reflect
-    // user re-categorizations, so only use it if the hub returned nothing.
-    console.warn('[API] Hub endpoint returned no data — falling back to GetTransactionsList (categories may be stale)');
-    if (onProgress) onProgress('Hub endpoint failed, using fallback...');
+    // user re-categorizations, so only use it if the hub returned no data or
+    // could not complete pagination. Never export a silently truncated result.
+    const fallbackReason = hubResult.completed ? 'returned no data' : 'did not complete pagination';
+    console.warn(`[API] Hub endpoint ${fallbackReason} — falling back to GetTransactionsList (categories may be stale)`);
+    if (onProgress) onProgress('Hub endpoint incomplete, using fallback...');
     return (await fetchRecentTransactions(startDate, endDate, onProgress, signal)) || [];
 }
 
@@ -276,6 +282,8 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
     let afterCursor = null;
     let pageCount = 0;
     let retryCount = 0;
+    let completed = false;
+    let aborted = false;
     const maxRetries = 3;
 
     // We expect to skip the first ~12 pages (since we have them from Phase 1)
@@ -284,6 +292,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
     while (hasNextPage) {
         if (stopScrolling) {
             console.log('[API] User requested stop');
+            aborted = true;
             break;
         }
 
@@ -354,17 +363,14 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
             const data = await response.json();
 
             if (data.errors) {
-                console.error('[API] History GraphQL Errors:', JSON.stringify(data.errors));
-                // If it's a pagination error, we might be done
-                break;
+                throw new Error(`History GraphQL error: ${data.errors[0]?.message || 'Unknown error'}`);
             }
 
             // Parse response
             // Structure: data.prime.transactionsHub.transactionPage
             const transactionPage = data.data?.prime?.transactionsHub?.transactionPage;
             if (!transactionPage) {
-                console.log('[API] No transactionPage in history response');
-                break;
+                throw new Error('No transactionPage in history response');
             }
 
             const transactions = transactionPage.transactions || [];
@@ -372,7 +378,12 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
 
             if (transactions.length === 0) {
                 hasNextPage = false;
+                completed = true;
                 break;
+            }
+
+            if (!pageInfo) {
+                throw new Error('No pageInfo in history response');
             }
 
             // Process transactions
@@ -411,12 +422,21 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
             if (oldestInPage && oldestInPage < finalStart) {
                 console.log(`[API] Reached past start date (${oldestInPage.toISOString()}), stopping history fetch.`);
                 hasNextPage = false;
+                completed = true;
                 break;
             }
 
             // Check page info
             hasNextPage = pageInfo?.hasNextPage || false;
             afterCursor = pageInfo?.endCursor || null;
+
+            if (hasNextPage && !afterCursor) {
+                throw new Error('History response indicates another page but has no end cursor');
+            }
+
+            if (!hasNextPage) {
+                completed = true;
+            }
 
             // Rate limiting delay
             // Adaptive: If we are scanning (skipping), go faster. If collecting, go slower.
@@ -428,6 +448,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
         } catch (e) {
             if (e.name === 'AbortError') {
                 console.log('[API] Historical scan aborted by user.');
+                aborted = true;
                 break;
             }
             console.error('[API] Error in history page:', e);
@@ -440,7 +461,11 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
         }
     }
 
-    return allHistoricalTransactions;
+    return {
+        transactions: allHistoricalTransactions,
+        completed,
+        aborted
+    };
 }
 
 /**
@@ -719,12 +744,14 @@ async function debugDumpRawResponses(maxHubPages = 5, onProgress) {
     // Save to file
     const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
-    link.href = window.URL.createObjectURL(blob);
+    const objectUrl = window.URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = `ck_raw_api_debug_${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
+    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
 
     return {
-        listCount: dump.transactionsList?.data ? 'ok' : 'failed',
+        listStatus: dump.transactionsList?.data ? 'ok' : 'failed',
         hubPagesFetched: dump.hubPages.length
     };
 }
@@ -896,9 +923,11 @@ function convertToCSV(transactions, columns) {
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
-    link.href = window.URL.createObjectURL(blob);
+    const objectUrl = window.URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = fileName;
     link.click();
+    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
 }
 
 function logResults(allTransactions, filteredTransactions, csvData) {
@@ -1255,8 +1284,6 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
 // Listener for messages from the popup script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'debugDumpRaw') {
-        sendResponse({ status: 'started', message: 'Raw API dump started' });
-
         const indicator = document.createElement('div');
         indicator.style.cssText = 'position:fixed;top:10px;left:20px;padding:10px 20px;background:rgba(0,0,0,0.8);color:white;border-radius:5px;z-index:9999;font-size:14px;';
         indicator.textContent = 'Dumping raw API responses...';
@@ -1267,10 +1294,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }).then((result) => {
             indicator.textContent = `Raw dump saved (${result.hubPagesFetched} hub pages).`;
             setTimeout(() => indicator.remove(), 5000);
+            sendResponse({ status: 'complete', result });
         }).catch((error) => {
             indicator.textContent = `Raw dump failed: ${error.message}`;
             indicator.style.background = 'rgba(180,0,0,0.85)';
             setTimeout(() => indicator.remove(), 8000);
+            sendResponse({ status: 'error', message: error.message });
         });
 
         return true;
