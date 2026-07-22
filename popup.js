@@ -44,6 +44,71 @@ document.querySelectorAll('.pill-btn').forEach(btn => {
     });
 });
 
+/**
+ * Send a message to the content script. If it doesn't answer (stale or missing
+ * content script — e.g. the page was loaded before the extension was updated),
+ * inject content.js into the tab and retry once.
+ */
+function sendMessageWithInjection(tab, message, callback) {
+    const tabId = tab.id;
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (!chrome.runtime.lastError) {
+            callback(response, null);
+            return;
+        }
+        console.warn('Content script not responding, injecting fresh copy...', chrome.runtime.lastError.message);
+
+        let tabUrl;
+        try {
+            tabUrl = new URL(tab.url);
+        } catch (error) {
+            callback(null, 'The active tab does not have a valid URL.');
+            return;
+        }
+
+        if (tabUrl.protocol !== 'https:' || tabUrl.hostname !== 'www.creditkarma.com') {
+            callback(null, 'Open a page on https://www.creditkarma.com before using the extension.');
+            return;
+        }
+
+        chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }, () => {
+            if (chrome.runtime.lastError) {
+                callback(null, chrome.runtime.lastError.message);
+                return;
+            }
+            chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
+                callback(retryResponse, chrome.runtime.lastError ? chrome.runtime.lastError.message : null);
+            });
+        });
+    });
+}
+
+// Debug: dump raw API responses to a JSON file
+document.getElementById('debug-raw-btn').addEventListener('click', () => {
+    const btn = document.getElementById('debug-raw-btn');
+    const originalText = btn.textContent;
+    btn.textContent = 'Dumping...';
+    btn.disabled = true;
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs[0]) {
+            alert('No active tab found.');
+            btn.textContent = originalText;
+            btn.disabled = false;
+            return;
+        }
+        sendMessageWithInjection(tabs[0], { action: 'debugDumpRaw', maxHubPages: 5 }, (response, error) => {
+            if (error) {
+                alert(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`);
+            } else if (response?.status === 'error') {
+                alert(`Raw API dump failed: ${response.message}`);
+            }
+            btn.textContent = originalText;
+            btn.disabled = false;
+        });
+    });
+});
+
 // Export Logic
 document.getElementById('export-btn').addEventListener('click', () => {
     const startDate = document.getElementById('start-date').value;
@@ -90,7 +155,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
             return;
         }
 
-        chrome.tabs.sendMessage(tabs[0].id, {
+        sendMessageWithInjection(tabs[0], {
             action: 'captureTransactions',
             startDate,
             endDate,
@@ -98,11 +163,11 @@ document.getElementById('export-btn').addEventListener('click', () => {
             fetchAccountNames: false, // Legacy override
             csvTypes,
             columns
-        }, (response) => {
+        }, (response, error) => {
             // Handle error (e.g. content script not loaded)
-            if (chrome.runtime.lastError) {
-                console.error(chrome.runtime.lastError);
-                alert('Connection error: Make sure you are on the Credit Karma page and reload.');
+            if (error) {
+                console.error(error);
+                alert(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`);
                 resetButton();
                 return;
             }
