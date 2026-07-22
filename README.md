@@ -67,10 +67,7 @@ Once you have your CSVs, you can use them with:
 
 ## Contributing
 
-Contributions are welcome! Feel free to:
-1. Fork the repository.
-2. Create a feature branch.
-3. Submit a pull request.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, pull request guidelines, and instructions for safely recording a sanitized HAR when investigating Credit Karma API changes.
 
 ## Credits
 
