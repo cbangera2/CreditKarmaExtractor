@@ -275,48 +275,41 @@ async function fetchGraphHistory(type, startDate, endDate, signal) {
 }
 
 /**
- * Main API entry point: Orchestrates fetching recent + historical data
+ * Main API entry point.
+ *
+ * IMPORTANT: The fast GetTransactionsList endpoint returns STALE categories —
+ * it ignores any re-categorizations the user made in the Credit Karma UI
+ * (verified 2026-06: a transaction recategorized "Transfer" -> "Travel &
+ * vacation" weeks earlier still came back as "Transfer" from the list
+ * endpoint, while the transactionsHub endpoint — the one Credit Karma's own
+ * transactions page uses — returned the corrected category).
+ *
+ * So the paginated transactionsHub endpoint is the primary source for the
+ * entire date range. GetTransactionsList is only a fallback if hub fails.
  */
 async function fetchTransactionsViaAPI(startDate, endDate, onProgress, signal) {
-    // 1. Fetch recent data using the fast GetTransactionsList endpoint
-    console.log('[API] Phase 1: Fetching recent transactions...');
-    let transactions = await fetchRecentTransactions(startDate, endDate, onProgress, signal);
+    console.log('[API] Fetching via transactionsHub (respects user re-categorizations)...');
 
-    if (!transactions) {
-        transactions = [];
+    const endDateTime = new Date(endDate);
+    endDateTime.setHours(23, 59, 59, 999);
+
+    const hubResult = await fetchHistoricalTransactions(startDate, endDateTime, onProgress, signal);
+
+    if (hubResult.aborted) {
+        return hubResult.transactions;
     }
 
-    // Sort to find the oldest date we have
-    transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-    let oldestDate = new Date();
-    if (transactions.length > 0) {
-        oldestDate = new Date(transactions[transactions.length - 1].date);
+    if (hubResult.completed && hubResult.transactions.length > 0) {
+        return hubResult.transactions;
     }
 
-    const reqStartDate = new Date(startDate);
-
-    // Check if we need to fetch older history
-    // Allow 7 day buffer
-    const daysDiff = (oldestDate - reqStartDate) / (1000 * 60 * 60 * 24);
-
-    if (daysDiff > 7) {
-        console.log(`[API] Gap detected: ${daysDiff.toFixed(1)} days. Phase 2: Fetching historical data...`);
-        if (onProgress) onProgress(`Fetching older history (${daysDiff.toFixed(0)} days gap)...`);
-
-        // Start from the day before our oldest known transaction
-        const historyEndDate = new Date(oldestDate);
-        historyEndDate.setDate(historyEndDate.getDate() - 1);
-
-        const historicalTransactions = await fetchHistoricalTransactions(startDate, historyEndDate, onProgress, signal);
-
-        if (historicalTransactions.length > 0) {
-            console.log(`[API] Merging ${historicalTransactions.length} historical transactions`);
-            transactions = [...transactions, ...historicalTransactions];
-        }
-    }
-
-    return transactions;
+    // Fallback: fast list endpoint. WARNING: its categories do not reflect
+    // user re-categorizations, so only use it if the hub returned no data or
+    // could not complete pagination. Never export a silently truncated result.
+    const fallbackReason = hubResult.completed ? 'returned no data' : 'did not complete pagination';
+    console.warn(`[API] Hub endpoint ${fallbackReason} — falling back to GetTransactionsList (categories may be stale)`);
+    if (onProgress) onProgress('Hub endpoint incomplete, using fallback...');
+    return (await fetchRecentTransactions(startDate, endDate, onProgress, signal)) || [];
 }
 
 /**
@@ -424,6 +417,8 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
     let afterCursor = null;
     let pageCount = 0;
     let retryCount = 0;
+    let completed = false;
+    let aborted = false;
     const maxRetries = 3;
 
     // We expect to skip the first ~12 pages (since we have them from Phase 1)
@@ -432,6 +427,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
     while (hasNextPage) {
         if (stopScrolling) {
             console.log('[API] User requested stop');
+            aborted = true;
             break;
         }
 
@@ -502,17 +498,14 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
             const data = await response.json();
 
             if (data.errors) {
-                console.error('[API] History GraphQL Errors:', JSON.stringify(data.errors));
-                // If it's a pagination error, we might be done
-                break;
+                throw new Error(`History GraphQL error: ${data.errors[0]?.message || 'Unknown error'}`);
             }
 
             // Parse response
             // Structure: data.prime.transactionsHub.transactionPage
             const transactionPage = data.data?.prime?.transactionsHub?.transactionPage;
             if (!transactionPage) {
-                console.log('[API] No transactionPage in history response');
-                break;
+                throw new Error('No transactionPage in history response');
             }
 
             const transactions = transactionPage.transactions || [];
@@ -520,7 +513,12 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
 
             if (transactions.length === 0) {
                 hasNextPage = false;
+                completed = true;
                 break;
+            }
+
+            if (!pageInfo) {
+                throw new Error('No pageInfo in history response');
             }
 
             // Process transactions
@@ -559,6 +557,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
             if (oldestInPage && oldestInPage < finalStart) {
                 console.log(`[API] Reached past start date (${oldestInPage.toISOString()}), stopping history fetch.`);
                 hasNextPage = false;
+                completed = true;
                 break;
             }
 
@@ -566,9 +565,17 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
             hasNextPage = pageInfo?.hasNextPage || false;
             afterCursor = pageInfo?.endCursor || null;
 
+            if (hasNextPage && !afterCursor) {
+                throw new Error('History response indicates another page but has no end cursor');
+            }
+
+            if (!hasNextPage) {
+                completed = true;
+            }
+
             // Rate limiting delay
             // Adaptive: If we are scanning (skipping), go faster. If collecting, go slower.
-            const delay = newItemsInPage > 0 ? 800 : 300;
+            const delay = newItemsInPage > 0 ? 400 : 250;
             await new Promise(resolve => setTimeout(resolve, delay));
 
             retryCount = 0; // Reset retries on success
@@ -576,6 +583,7 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
         } catch (e) {
             if (e.name === 'AbortError') {
                 console.log('[API] Historical scan aborted by user.');
+                aborted = true;
                 break;
             }
             console.error('[API] Error in history page:', e);
@@ -588,7 +596,11 @@ async function fetchHistoricalTransactions(startDate, endDate, onProgress, signa
         }
     }
 
-    return allHistoricalTransactions;
+    return {
+        transactions: allHistoricalTransactions,
+        completed,
+        aborted
+    };
 }
 
 /**
@@ -790,6 +802,96 @@ async function enrichTransactionsWithAccountNames(transactions, onProgress) {
 }
 
 // ============================================
+// Debug: Raw API response dump
+// ============================================
+
+/**
+ * Fetch raw, unprocessed responses from BOTH transaction endpoints and save
+ * them as a JSON file. Used to diagnose schema issues (e.g. which field holds
+ * user re-categorizations) without any of the extension's field mapping.
+ * @param {number} maxHubPages - how many pages of the hub endpoint to fetch
+ */
+async function debugDumpRawResponses(maxHubPages = 5, onProgress) {
+    const headers = await getAuthHeaders();
+    const dump = {
+        generatedAt: new Date().toISOString(),
+        note: 'Raw GraphQL responses. transactionsList = GetTransactionsList (fast bulk endpoint). hubPages = GetTransactions (paginated endpoint used by the Credit Karma transactions page UI).',
+        transactionsList: null,
+        hubPages: []
+    };
+
+    // 1. Raw GetTransactionsList response
+    if (onProgress) onProgress('Debug: fetching GetTransactionsList...');
+    try {
+        const listResponse = await fetch(CONFIG.API_ENDPOINT, {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+                extensions: { persistedQuery: { sha256Hash: CONFIG.TRANSACTIONS_LIST_HASH, version: 1 } },
+                operationName: "GetTransactionsList",
+                variables: { input: { accountInput: {}, categoryInput: { categoryId: null, primeCategoryType: null } } }
+            })
+        });
+        dump.transactionsList = await listResponse.json();
+    } catch (e) {
+        dump.transactionsList = { fetchError: e.message };
+    }
+
+    // 2. Raw GetTransactions (hub) pages
+    let afterCursor = null;
+    for (let page = 1; page <= maxHubPages; page++) {
+        if (onProgress) onProgress(`Debug: fetching hub page ${page}/${maxHubPages}...`);
+        try {
+            const variables = {
+                input: {
+                    accountInput: {},
+                    categoryInput: { categoryId: null, primeCategoryType: null },
+                    datePeriodInput: { datePeriod: null },
+                    paginationInput: {}
+                }
+            };
+            if (afterCursor) variables.input.paginationInput.afterCursor = afterCursor;
+
+            const hubResponse = await fetch(CONFIG.API_ENDPOINT, {
+                method: 'POST',
+                headers: headers,
+                credentials: 'include',
+                body: JSON.stringify({
+                    extensions: { persistedQuery: { sha256Hash: CONFIG.TRANSACTIONS_QUERY_HASH, version: 1 } },
+                    operationName: "GetTransactions",
+                    variables: variables
+                })
+            });
+            const hubData = await hubResponse.json();
+            dump.hubPages.push(hubData);
+
+            const pageInfo = hubData.data?.prime?.transactionsHub?.transactionPage?.pageInfo;
+            if (!pageInfo?.hasNextPage) break;
+            afterCursor = pageInfo.endCursor;
+            await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (e) {
+            dump.hubPages.push({ fetchError: e.message });
+            break;
+        }
+    }
+
+    // Save to file
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    const objectUrl = window.URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = `ck_raw_api_debug_${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
+
+    return {
+        listStatus: dump.transactionsList?.data ? 'ok' : 'failed',
+        hubPagesFetched: dump.hubPages.length
+    };
+}
+
+// ============================================
 // Original DOM-based extraction (Fallback)
 // ============================================
 
@@ -961,9 +1063,11 @@ function convertGraphHistoryToCSV(history, valueColumn) {
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
-    link.href = window.URL.createObjectURL(blob);
+    const objectUrl = window.URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = fileName;
     link.click();
+    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
 }
 
 function logResults(allTransactions, filteredTransactions, csvData) {
@@ -1319,6 +1423,27 @@ async function captureTransactionsInDateRange(startDate, endDate, fetchAccountNa
 
 // Listener for messages from the popup script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'debugDumpRaw') {
+        const indicator = document.createElement('div');
+        indicator.style.cssText = 'position:fixed;top:10px;left:20px;padding:10px 20px;background:rgba(0,0,0,0.8);color:white;border-radius:5px;z-index:9999;font-size:14px;';
+        indicator.textContent = 'Dumping raw API responses...';
+        document.body.appendChild(indicator);
+
+        debugDumpRawResponses(request.maxHubPages || 5, (msg) => {
+            indicator.textContent = msg;
+        }).then((result) => {
+            indicator.textContent = `Raw dump saved (${result.hubPagesFetched} hub pages).`;
+            setTimeout(() => indicator.remove(), 5000);
+            sendResponse({ status: 'complete', result });
+        }).catch((error) => {
+            indicator.textContent = `Raw dump failed: ${error.message}`;
+            indicator.style.background = 'rgba(180,0,0,0.85)';
+            setTimeout(() => indicator.remove(), 8000);
+            sendResponse({ status: 'error', message: error.message });
+        });
+
+        return true;
+    }
     if (request.action === 'captureTransactions') {
         try {
             const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
