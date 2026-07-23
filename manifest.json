@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Credit Karma Data Exporter",
   "version": "2.1",
-  "description": "Export transactions, net worth history, and investment values from Credit Karma.",
+  "description": "Export transactions, wealth history, and current account balances from Credit Karma.",
   "permissions": [
     "activeTab",
     "scripting"

@@ -204,6 +204,107 @@ function formattedTextValue(formattedText) {
     return formattedText?.spans?.map(span => span.text || '').join('').trim() || '';
 }
 
+function viewTextValue(value) {
+    if (typeof value === 'string' || typeof value === 'number') {
+        return String(value).trim();
+    }
+    return formattedTextValue(value);
+}
+
+function parseFormattedBalance(value) {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+
+    const text = viewTextValue(value);
+    if (!text || text.includes('%')) return null;
+
+    const normalized = text
+        .replace(/[\u2212\u2012\u2013\u2014]/g, '-')
+        .replace(/\s/g, '');
+    const isNegative = /^\(.*\)$/.test(normalized) || normalized.includes('-');
+    const numericText = normalized.replace(/[(),+$¢£¥€-]/g, '');
+
+    if (!/^\d+(?:\.\d+)?$/.test(numericText)) return null;
+
+    const parsed = Number(numericText);
+    if (!Number.isFinite(parsed)) return null;
+    return isNegative ? -parsed : parsed;
+}
+
+function formatSnapshotDate(date) {
+    if (!date || typeof date.getTime !== 'function' || Number.isNaN(date.getTime())) {
+        throw new Error('Cannot export current account balances without a valid as-of date.');
+    }
+    return date.toISOString();
+}
+
+/**
+ * Extract current account/source balances from KPL row views. A row can be a
+ * direct view or be repeated below an experimentation view's lookalikeViews,
+ * so traverse the response and deduplicate exact account snapshots.
+ */
+function extractWealthAccountRows(data, accountType, asOf = new Date()) {
+    const root = data?.data?.prime?.networthByAccountType;
+    if (!root || typeof root !== 'object') {
+        throw new Error(`Credit Karma did not return current ${accountType} account balances. The API may have changed.`);
+    }
+
+    const rows = [];
+    const visited = new Set();
+    const asOfValue = formatSnapshotDate(asOf);
+
+    function visit(value) {
+        if (!value || typeof value !== 'object' || visited.has(value)) return;
+        visited.add(value);
+
+        if (!Array.isArray(value) && value.rowTitle && value.rowValue) {
+            const sourceLabel = viewTextValue(value.rowTitle);
+            const balance = parseFormattedBalance(value.rowValue);
+            const descriptor = viewTextValue(
+                value.statusText
+                || value.rowStatusDot?.statusDotText
+                || value.rowSubtitle
+                || value.rowSubTitle
+                || value.descriptor
+                || value.subTitle
+            );
+
+            if (sourceLabel && balance !== null) {
+                rows.push({
+                    asOf: asOfValue,
+                    accountType,
+                    sourceLabel,
+                    balance,
+                    descriptor
+                });
+            }
+        }
+
+        for (const child of Object.values(value)) {
+            visit(child);
+        }
+    }
+
+    visit(root);
+
+    const uniqueRows = new Map();
+    for (const row of rows) {
+        const key = [
+            row.accountType.toLowerCase(),
+            row.sourceLabel.toLowerCase(),
+            row.balance,
+            row.descriptor.toLowerCase()
+        ].join('\u0000');
+        if (!uniqueRows.has(key)) uniqueRows.set(key, row);
+    }
+
+    return Array.from(uniqueRows.values())
+        .sort((a, b) => a.accountType.localeCompare(b.accountType)
+            || a.sourceLabel.localeCompare(b.sourceLabel)
+            || a.balance - b.balance);
+}
+
 function graphDateToISO(dateLabel) {
     const parsedDate = new Date(dateLabel);
     if (Number.isNaN(parsedDate.getTime())) return null;
@@ -272,6 +373,22 @@ async function fetchGraphHistory(type, startDate, endDate, signal) {
         startDate,
         endDate
     );
+}
+
+async function fetchWealthAccountSnapshots(signal, asOf = new Date()) {
+    const accountTypes = ['cash', 'investments'];
+    const responses = await Promise.all(accountTypes.map(async accountType => ({
+        accountType,
+        data: await fetchPersistedQuery(
+            'getAccountL2Page',
+            CONFIG.ACCOUNT_L2_HASH,
+            { input: { accountType } },
+            signal
+        )
+    })));
+
+    return responses.flatMap(({ accountType, data }) =>
+        extractWealthAccountRows(data, accountType, asOf));
 }
 
 /**
@@ -1060,6 +1177,19 @@ function convertGraphHistoryToCSV(history, valueColumn) {
     return `Date,${valueColumn}\n${rows.join('')}`;
 }
 
+function convertWealthAccountsToCSV(rows) {
+    const escape = value => String(value ?? '').replace(/"/g, '""');
+    const csvRows = rows.map(row => [
+        row.asOf,
+        row.accountType,
+        row.sourceLabel,
+        row.balance,
+        row.descriptor
+    ].map(value => `"${escape(value)}"`).join(',') + '\n');
+
+    return `As Of,Account Type,Source Label,Balance,Descriptor\n${csvRows.join('')}`;
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -1448,7 +1578,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         try {
             const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
             const needsTransactions = csvTypes.allTransactions || csvTypes.income || csvTypes.expenses;
-            console.log(`Received export request from ${startDate} to ${endDate}`);
+            console.log(csvTypes.wealthAccounts
+                ? 'Received export request including current account balances'
+                : `Received export request from ${startDate} to ${endDate}`);
 
             // Create a visual indicator that extraction is in progress - moved to left side
             const indicator = document.createElement('div');
@@ -1532,16 +1664,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     );
                 }
 
-                return { transactionCount: filteredTransactions.length, graphResults };
+                let wealthAccountCount = 0;
+                if (csvTypes.wealthAccounts) {
+                    const asOf = new Date();
+                    const wealthAccounts = await fetchWealthAccountSnapshots(undefined, asOf);
+                    wealthAccountCount = wealthAccounts.length;
+                    if (wealthAccountCount === 0) {
+                        console.warn('No current cash or investment account balances were found.');
+                    } else {
+                        saveCSVToFile(
+                            convertWealthAccountsToCSV(wealthAccounts),
+                            `wealth_accounts_${asOf.toISOString().slice(0, 10)}.csv`
+                        );
+                    }
+                }
+
+                return { transactionCount: filteredTransactions.length, graphResults, wealthAccountCount };
             };
 
-            exportData().then(({ transactionCount, graphResults }) => {
+            exportData().then(({ transactionCount, graphResults, wealthAccountCount }) => {
                 if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
 
                 const graphPointCount = graphResults.reduce((count, result) => count + result.history.length, 0);
                 const summaryParts = [];
                 if (needsTransactions) summaryParts.push(`${transactionCount} transactions`);
                 if (graphResults.length) summaryParts.push(`${graphPointCount} graph values`);
+                if (csvTypes.wealthAccounts) summaryParts.push(`${wealthAccountCount} current account balances`);
 
                 // Show completion notification - moved to left side
                 const completionNotice = document.createElement('div');

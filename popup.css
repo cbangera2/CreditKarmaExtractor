@@ -182,6 +182,19 @@ input[type="date"] {
   margin: 0;
 }
 
+.checkbox-label-wide {
+  grid-column: 1 / -1;
+  align-items: flex-start;
+}
+
+.checkbox-label-wide small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+}
+
 /* Toggle Switch */
 .toggle-row {
   display: flex;

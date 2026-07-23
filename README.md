@@ -20,6 +20,7 @@ The **Credit Karma Data Extractor** exports transaction history, net worth histo
 - **Instant Stop**: Cancel huge extractions immediately without losing data—what you've fetched is saved.
 - **Smart Export**: Automatically generates `All Data`, `Income Only`, and `Expenses Only` files.
 - **Wealth History**: Export the full Net Worth and Investment graph series as separate, date-filtered CSV files.
+- **Current Wealth Accounts**: Export current cash and investment source balances to a separate `wealth_accounts_<date>.csv` snapshot. This export is not filtered by the selected historical date range.
 
 ## Quick Start
 
@@ -34,6 +35,7 @@ The **Credit Karma Data Extractor** exports transaction history, net worth histo
    - Click the extension icon.
    - Select your date range (or click "Last Year").
    - Choose the transaction and/or wealth-history files to generate.
+   - Optionally choose **Current Cash & Investment Accounts** for an as-of snapshot of the source rows currently returned by Credit Karma.
    - Click **Export Selected Data**.
    - Watch the progress indicator and wait for your CSV files!
 
@@ -46,6 +48,9 @@ Once you have your CSVs, you can use them with:
 3. Any spreadsheet software (Excel, Google Sheets, Numbers).
 
 ## Changelog
+
+### Unreleased
+- Added a separate current-balance snapshot export for individual cash and investment sources. Credit Karma's captured responses do not provide per-source history, so this file is intentionally independent of the date-range fields.
 
 ### Version 2.1 (July 2026)
 - Added separate CSV exports for Net Worth and Investment graph values.
