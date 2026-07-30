@@ -43,10 +43,19 @@
 
         <section class="card">
             <h3 class="section-title">Choose Your Export</h3>
+            <label class="bundle-option checkbox-label checkbox-label-wide">
+                <input type="checkbox" id="budgetLensBundleCheckbox" checked>
+                <span>
+                    BudgetLens Bundle
+                    <small>Recommended · 1 JSON file with transactions and all wealth data</small>
+                </span>
+            </label>
+
+            <div class="section-divider"></div>
             <p class="group-label">Transactions</p>
             <div class="grid-columns transaction-options">
                 <label class="checkbox-label">
-                    <input type="checkbox" id="allTransactionsCheckbox" checked> All
+                    <input type="checkbox" id="allTransactionsCheckbox"> All Transactions
                 </label>
                 <label class="checkbox-label">
                     <input type="checkbox" id="incomeCheckbox"> Income
@@ -85,6 +94,7 @@
 
         <section class="card">
             <h3 class="section-title">Transaction Columns</h3>
+            <p class="group-label">CSV exports only</p>
             <div class="column-grid">
                 <label class="checkbox-label"><input type="checkbox" id="col-date" checked> Date</label>
                 <label class="checkbox-label"><input type="checkbox" id="col-desc" checked> Desc</label>

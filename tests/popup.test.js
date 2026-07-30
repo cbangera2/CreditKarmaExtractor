@@ -12,6 +12,7 @@ function createPopupContext() {
     const sentMessages = [];
     const checkboxIds = [
         'useApiCheckbox',
+        'budgetLensBundleCheckbox',
         'allTransactionsCheckbox',
         'incomeCheckbox',
         'expensesCheckbox',
@@ -115,4 +116,18 @@ test('historical exports still require both dates', () => {
 
     assert.deepEqual(alerts, ['Please select both start and end dates.']);
     assert.deepEqual(sentMessages, []);
+});
+
+test('BudgetLens bundle is sent as a distinct export type', () => {
+    const { alerts, elements, listeners, sentMessages } = createPopupContext();
+    elements.get('budgetLensBundleCheckbox').checked = true;
+    elements.get('start-date').value = '2026-01-01';
+    elements.get('end-date').value = '2026-07-30';
+
+    listeners.get('export-btn:click')();
+
+    assert.deepEqual(alerts, []);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].csvTypes.budgetLensBundle, true);
+    assert.equal(sentMessages[0].csvTypes.allTransactions, false);
 });

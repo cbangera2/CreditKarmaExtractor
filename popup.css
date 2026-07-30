@@ -171,6 +171,21 @@ input[type="date"] {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.bundle-option {
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+
+.bundle-option small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+}
+
 .wealth-options {
   display: grid;
   gap: 8px;

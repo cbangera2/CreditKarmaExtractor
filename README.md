@@ -19,6 +19,7 @@ The **Credit Karma Data Extractor** exports transaction history, net worth histo
 - **Modern UI**: Beautiful interface with Dark Mode support and Quick Date presets (YTD, Last Year).
 - **Instant Stop**: Cancel huge extractions immediately without losing data—what you've fetched is saved.
 - **Smart Export**: Automatically generates `All Data`, `Income Only`, and `Expenses Only` files.
+- **One-File BudgetLens Export**: The default BudgetLens Bundle combines transactions, both wealth histories, the current five-category breakdown, and available account sources in one versioned JSON file.
 - **Wealth History**: Export the full Net Worth and Investment graph series as separate, date-filtered CSV files.
 - **Current Net Worth Breakdown**: Export current Cash, Investments, Property, Credit cards, and Loans totals to `net_worth_breakdown_<date>.csv`, plus available cash, investment, and property source balances to `wealth_accounts_<date>.csv`. These snapshots are not filtered by the selected historical date range.
 
@@ -34,7 +35,8 @@ The **Credit Karma Data Extractor** exports transaction history, net worth histo
    - Go to [Credit Karma Transactions](https://www.creditkarma.com/networth/transactions).
    - Click the extension icon.
    - Select your date range (or click "Last Year").
-   - Choose the transaction and/or wealth-history files to generate. **Complete Net Worth** creates the total history plus current asset/debt segment totals and the detailed source rows Credit Karma makes available.
+   - Leave **BudgetLens Bundle** selected for one JSON file containing transactions and all supported wealth data.
+   - Choose the individual CSV exports when you need separate transaction or wealth files. **Complete Net Worth** creates the total history plus current asset/debt segment totals and the detailed source rows Credit Karma makes available.
    - Choose **Current Snapshot Only** when you want the current breakdown and account balances without a historical date range.
    - Click **Export Selected Data**.
    - Watch the progress indicator and wait for your CSV files!
@@ -50,6 +52,7 @@ Once you have your CSVs, you can use them with:
 ## Changelog
 
 ### Version 2.2 (July 2026)
+- Added a one-file, versioned BudgetLens JSON bundle containing transactions and all supported wealth data.
 - Added current snapshot exports for Cash, Investments, Property, Credit cards, and Loans totals, plus individual cash, investment, and property sources. Credit Karma's captured responses do not provide per-source history, so these files are intentionally independent of the date-range fields.
 
 ### Version 2.1 (July 2026)

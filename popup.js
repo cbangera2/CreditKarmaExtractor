@@ -119,6 +119,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
 
     // Get File Types
     const csvTypes = {
+        budgetLensBundle: document.getElementById('budgetLensBundleCheckbox').checked,
         allTransactions: document.getElementById('allTransactionsCheckbox').checked,
         income: document.getElementById('incomeCheckbox').checked,
         expenses: document.getElementById('expensesCheckbox').checked,

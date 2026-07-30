@@ -23,7 +23,8 @@ vm.runInContext(`${contentScript}\n;globalThis.testExports = {
     extractWealthAccountRows,
     convertNetWorthBreakdownToCSV,
     convertWealthAccountsToCSV,
-    shouldExportCurrentWealth
+    shouldExportCurrentWealth,
+    buildBudgetLensBundle
 };`, context);
 
 const {
@@ -36,7 +37,8 @@ const {
     extractWealthAccountRows,
     convertNetWorthBreakdownToCSV,
     convertWealthAccountsToCSV,
-    shouldExportCurrentWealth
+    shouldExportCurrentWealth,
+    buildBudgetLensBundle
 } = context.testExports;
 
 function point(date, value) {
@@ -120,7 +122,58 @@ test('current wealth snapshots request every account segment exposed by Credit K
 test('net worth history automatically includes current detailed snapshots', () => {
     assert.equal(shouldExportCurrentWealth({ netWorth: true, wealthAccounts: false }), true);
     assert.equal(shouldExportCurrentWealth({ netWorth: false, wealthAccounts: true }), true);
+    assert.equal(shouldExportCurrentWealth({ budgetLensBundle: true }), true);
     assert.equal(shouldExportCurrentWealth({ netWorth: false, wealthAccounts: false }), false);
+});
+
+test('BudgetLens bundle uses a stable versioned contract and full transaction fields', () => {
+    const bundle = buildBudgetLensBundle({
+        startDate: '2026-01-01',
+        endDate: '2026-07-30',
+        exportedAt: new Date('2026-07-30T12:00:00.000Z'),
+        transactions: [{
+            id: 'not-exported',
+            date: '2026-07-01',
+            description: 'Synthetic Market',
+            amount: -12.34,
+            category: 'Groceries',
+            transactionType: 'debit',
+            accountName: 'Example Checking',
+            accountType: 'CHECKING',
+            provider: 'Example Bank',
+            labels: ['weekly'],
+            notes: 'Synthetic note'
+        }],
+        netWorthHistory: [{ date: '2026-07-01', value: 1000 }],
+        investmentHistory: [{ date: '2026-07-01', value: 500 }],
+        netWorthBreakdown: [{
+            asOf: '2026-07-30T12:00:00.000Z',
+            section: 'assets',
+            segment: 'cash',
+            balance: 500,
+            descriptor: '1 account'
+        }],
+        wealthAccounts: [{
+            asOf: '2026-07-30T12:00:00.000Z',
+            accountType: 'cash',
+            sourceLabel: 'Example Checking',
+            balance: 500,
+            descriptor: 'Connected'
+        }]
+    });
+
+    assert.equal(bundle.format, 'budgetlens');
+    assert.equal(bundle.version, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(bundle.dateRange)), {
+        start: '2026-01-01',
+        end: '2026-07-30'
+    });
+    assert.equal(bundle.transactions[0].id, undefined);
+    assert.equal(bundle.transactions[0].accountName, 'Example Checking');
+    assert.equal(bundle.netWorthHistory.length, 1);
+    assert.equal(bundle.investmentHistory.length, 1);
+    assert.equal(bundle.netWorthBreakdown.length, 1);
+    assert.equal(bundle.wealthAccounts.length, 1);
 });
 
 function formattedText(text) {

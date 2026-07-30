@@ -509,7 +509,7 @@ async function fetchCurrentWealthSnapshots(signal, asOf = new Date()) {
 }
 
 function shouldExportCurrentWealth(csvTypes) {
-    return Boolean(csvTypes?.netWorth || csvTypes?.wealthAccounts);
+    return Boolean(csvTypes?.budgetLensBundle || csvTypes?.netWorth || csvTypes?.wealthAccounts);
 }
 
 /**
@@ -1324,8 +1324,52 @@ function convertNetWorthBreakdownToCSV(rows) {
     return `As Of,Section,Segment,Balance,Descriptor\n${csvRows.join('')}`;
 }
 
+function buildBudgetLensBundle({
+    startDate,
+    endDate,
+    exportedAt,
+    transactions,
+    netWorthHistory,
+    investmentHistory,
+    netWorthBreakdown,
+    wealthAccounts
+}) {
+    return {
+        format: 'budgetlens',
+        version: 1,
+        exportedAt: exportedAt.toISOString(),
+        dateRange: { start: startDate, end: endDate },
+        transactions: transactions.map(transaction => ({
+            date: transaction.date,
+            description: transaction.description ?? '',
+            amount: transaction.amount,
+            category: transaction.category ?? null,
+            transactionType: transaction.transactionType ?? null,
+            accountName: transaction.accountName ?? null,
+            accountType: transaction.accountType ?? null,
+            provider: transaction.provider ?? null,
+            labels: Array.isArray(transaction.labels) ? transaction.labels : [],
+            notes: transaction.notes ?? null
+        })),
+        netWorthHistory,
+        investmentHistory,
+        netWorthBreakdown,
+        wealthAccounts
+    };
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
+    const link = document.createElement('a');
+    const objectUrl = window.URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = fileName;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
+}
+
+function saveJSONToFile(value, fileName) {
+    const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     const objectUrl = window.URL.createObjectURL(blob);
     link.href = objectUrl;
@@ -1711,7 +1755,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'captureTransactions') {
         try {
             const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
-            const needsTransactions = csvTypes.allTransactions || csvTypes.income || csvTypes.expenses;
+            const needsTransactions =
+                csvTypes.budgetLensBundle ||
+                csvTypes.allTransactions ||
+                csvTypes.income ||
+                csvTypes.expenses;
             console.log(csvTypes.wealthAccounts
                 ? 'Received export request including current account balances'
                 : `Received export request from ${startDate} to ${endDate}`);
@@ -1767,18 +1815,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 const graphExports = [];
-                if (csvTypes.netWorth) {
+                if (csvTypes.netWorth || csvTypes.budgetLensBundle) {
                     graphExports.push({
                         type: 'netWorth',
                         fileName: `net_worth_${startDate}_to_${endDate}.csv`,
-                        valueColumn: 'Net Worth'
+                        valueColumn: 'Net Worth',
+                        saveCSV: csvTypes.netWorth
                     });
                 }
-                if (csvTypes.investments) {
+                if (csvTypes.investments || csvTypes.budgetLensBundle) {
                     graphExports.push({
                         type: 'investments',
                         fileName: `investments_${startDate}_to_${endDate}.csv`,
-                        valueColumn: 'Investment Value'
+                        valueColumn: 'Investment Value',
+                        saveCSV: csvTypes.investments
                     });
                 }
 
@@ -1792,24 +1842,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         console.warn(`No ${result.type} graph values found in the selected date range.`);
                         continue;
                     }
-                    saveCSVToFile(
-                        convertGraphHistoryToCSV(result.history, result.valueColumn),
-                        result.fileName
-                    );
+                    if (result.saveCSV) {
+                        saveCSVToFile(
+                            convertGraphHistoryToCSV(result.history, result.valueColumn),
+                            result.fileName
+                        );
+                    }
                 }
 
                 let wealthAccountCount = 0;
                 let netWorthSegmentCount = 0;
+                let breakdownRows = [];
+                let accountRows = [];
                 if (shouldExportCurrentWealth(csvTypes)) {
                     const asOf = new Date();
-                    const { breakdownRows, accountRows } =
-                        await fetchCurrentWealthSnapshots(undefined, asOf);
+                    ({ breakdownRows, accountRows } =
+                        await fetchCurrentWealthSnapshots(undefined, asOf));
                     netWorthSegmentCount = breakdownRows.length;
                     wealthAccountCount = accountRows.length;
+                    const saveSnapshotCSVs = csvTypes.netWorth || csvTypes.wealthAccounts;
 
                     if (netWorthSegmentCount === 0) {
                         console.warn('No current net worth segment balances were found.');
-                    } else {
+                    } else if (saveSnapshotCSVs) {
                         saveCSVToFile(
                             convertNetWorthBreakdownToCSV(breakdownRows),
                             `net_worth_breakdown_${asOf.toISOString().slice(0, 10)}.csv`
@@ -1818,12 +1873,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                     if (wealthAccountCount === 0) {
                         console.warn('No detailed current asset account balances were found.');
-                    } else {
+                    } else if (saveSnapshotCSVs) {
                         saveCSVToFile(
                             convertWealthAccountsToCSV(accountRows),
                             `wealth_accounts_${asOf.toISOString().slice(0, 10)}.csv`
                         );
                     }
+                }
+
+                if (csvTypes.budgetLensBundle) {
+                    const histories = new Map(
+                        graphResults.map(result => [result.type, result.history])
+                    );
+                    const bundle = buildBudgetLensBundle({
+                        startDate,
+                        endDate,
+                        exportedAt: new Date(),
+                        transactions: filteredTransactions,
+                        netWorthHistory: histories.get('netWorth') || [],
+                        investmentHistory: histories.get('investments') || [],
+                        netWorthBreakdown: breakdownRows,
+                        wealthAccounts: accountRows
+                    });
+                    saveJSONToFile(
+                        bundle,
+                        `budgetlens_${startDate}_to_${endDate}.json`
+                    );
                 }
 
                 return {
@@ -1850,6 +1925,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     summaryParts.push(`${netWorthSegmentCount} net worth segments`);
                     summaryParts.push(`${wealthAccountCount} current account balances`);
                 }
+                if (csvTypes.budgetLensBundle) summaryParts.push('1 BudgetLens bundle');
 
                 // Show completion notification - moved to left side
                 const completionNotice = document.createElement('div');
