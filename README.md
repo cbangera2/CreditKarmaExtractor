@@ -49,7 +49,7 @@ Once you have your CSVs, you can use them with:
 
 ## Changelog
 
-### Unreleased
+### Version 2.2 (July 2026)
 - Added current snapshot exports for Cash, Investments, Property, Credit cards, and Loans totals, plus individual cash, investment, and property sources. Credit Karma's captured responses do not provide per-source history, so these files are intentionally independent of the date-range fields.
 
 ### Version 2.1 (July 2026)
