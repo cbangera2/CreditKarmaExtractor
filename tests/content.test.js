@@ -22,7 +22,8 @@ vm.runInContext(`${contentScript}\n;globalThis.testExports = {
     extractNetWorthSegmentRows,
     extractWealthAccountRows,
     convertNetWorthBreakdownToCSV,
-    convertWealthAccountsToCSV
+    convertWealthAccountsToCSV,
+    shouldExportCurrentWealth
 };`, context);
 
 const {
@@ -34,7 +35,8 @@ const {
     extractNetWorthSegmentRows,
     extractWealthAccountRows,
     convertNetWorthBreakdownToCSV,
-    convertWealthAccountsToCSV
+    convertWealthAccountsToCSV,
+    shouldExportCurrentWealth
 } = context.testExports;
 
 function point(date, value) {
@@ -113,6 +115,12 @@ test('graph CSV has stable headers and ISO dates', () => {
 
 test('current wealth snapshots request every account segment exposed by Credit Karma', () => {
     assert.deepEqual(Array.from(WEALTH_ACCOUNT_TYPES), ['cash', 'investments', 'property']);
+});
+
+test('net worth history automatically includes current detailed snapshots', () => {
+    assert.equal(shouldExportCurrentWealth({ netWorth: true, wealthAccounts: false }), true);
+    assert.equal(shouldExportCurrentWealth({ netWorth: false, wealthAccounts: true }), true);
+    assert.equal(shouldExportCurrentWealth({ netWorth: false, wealthAccounts: false }), false);
 });
 
 function formattedText(text) {

@@ -508,6 +508,10 @@ async function fetchCurrentWealthSnapshots(signal, asOf = new Date()) {
     };
 }
 
+function shouldExportCurrentWealth(csvTypes) {
+    return Boolean(csvTypes?.netWorth || csvTypes?.wealthAccounts);
+}
+
 /**
  * Main API entry point.
  *
@@ -1796,7 +1800,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 let wealthAccountCount = 0;
                 let netWorthSegmentCount = 0;
-                if (csvTypes.wealthAccounts) {
+                if (shouldExportCurrentWealth(csvTypes)) {
                     const asOf = new Date();
                     const { breakdownRows, accountRows } =
                         await fetchCurrentWealthSnapshots(undefined, asOf);
@@ -1842,7 +1846,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const summaryParts = [];
                 if (needsTransactions) summaryParts.push(`${transactionCount} transactions`);
                 if (graphResults.length) summaryParts.push(`${graphPointCount} graph values`);
-                if (csvTypes.wealthAccounts) {
+                if (shouldExportCurrentWealth(csvTypes)) {
                     summaryParts.push(`${netWorthSegmentCount} net worth segments`);
                     summaryParts.push(`${wealthAccountCount} current account balances`);
                 }

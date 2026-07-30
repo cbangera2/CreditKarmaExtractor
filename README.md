@@ -34,8 +34,8 @@ The **Credit Karma Data Extractor** exports transaction history, net worth histo
    - Go to [Credit Karma Transactions](https://www.creditkarma.com/networth/transactions).
    - Click the extension icon.
    - Select your date range (or click "Last Year").
-   - Choose the transaction and/or wealth-history files to generate.
-   - Optionally choose **Current Net Worth Breakdown & Accounts** for current asset/debt segment totals and the detailed source rows Credit Karma makes available.
+   - Choose the transaction and/or wealth-history files to generate. **Net Worth History + Current Details** creates the total history plus current asset/debt segment totals and the detailed source rows Credit Karma makes available.
+   - Choose **Current Details Only** when you want the current breakdown and account balances without a historical date range.
    - Click **Export Selected Data**.
    - Watch the progress indicator and wait for your CSV files!
 
