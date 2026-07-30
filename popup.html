@@ -10,7 +10,10 @@
 
 <body data-theme="light">
     <header>
-        <h1>Credit Karma Extractor</h1>
+        <div>
+            <h1>Credit Karma Extractor</h1>
+            <p class="header-subtitle">Export transactions and wealth data to CSV</p>
+        </div>
         <div class="theme-toggle" id="theme-toggle" title="Toggle Dark Mode">
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
@@ -19,7 +22,7 @@
     </header>
 
     <main>
-        <section class="card">
+        <section class="card date-card">
             <h3 class="section-title">Date Range</h3>
             <div class="input-row">
                 <div class="input-group">
@@ -39,54 +42,50 @@
         </section>
 
         <section class="card">
-            <h3 class="section-title">Settings</h3>
-            <label class="toggle-row" title="Uses the new hidden API. Much faster and deeper history.">
-                <div>
-                    <span style="display:block; font-size:12px; font-weight:500;">Use Fast API</span>
-                    <span style="font-size:10px; color:var(--text-secondary);">Recommended</span>
-                </div>
-                <div class="toggle-switch">
-                    <input type="checkbox" id="useApiCheckbox" checked>
-                    <span class="slider"></span>
-                </div>
-            </label>
-        </section>
+            <h3 class="section-title">Choose Your Export</h3>
+            <p class="group-label">Transactions</p>
+            <div class="grid-columns transaction-options">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="allTransactionsCheckbox" checked> All
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="incomeCheckbox"> Income
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="expensesCheckbox"> Expenses
+                </label>
+            </div>
 
-        <section class="card">
-            <h3 class="section-title">Files to Generate</h3>
-            <div class="grid-columns">
-                <label class="checkbox-label">
-                    <input type="checkbox" id="allTransactionsCheckbox" checked> All Data
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="incomeCheckbox"> Income Only
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="expensesCheckbox"> Expenses Only
-                </label>
+            <div class="section-divider"></div>
+            <p class="group-label">Net Worth</p>
+            <div class="wealth-options">
                 <label class="checkbox-label checkbox-label-wide">
                     <input type="checkbox" id="netWorthCheckbox">
                     <span>
-                        Net Worth History + Current Details
-                        <small>History, asset/debt breakdown, and available account balances</small>
+                        Complete Net Worth
+                        <small>3 files: total history, current categories, and account sources</small>
                     </span>
                 </label>
                 <label class="checkbox-label">
-                    <input type="checkbox" id="investmentsCheckbox"> Investment History
+                    <input type="checkbox" id="investmentsCheckbox">
+                    <span>
+                        Investment History
+                        <small>Investment total over time</small>
+                    </span>
                 </label>
                 <label class="checkbox-label checkbox-label-wide">
                     <input type="checkbox" id="wealthAccountsCheckbox">
                     <span>
-                        Current Details Only
-                        <small>Asset/debt breakdown and available account balances; no date range required</small>
+                        Current Snapshot Only
+                        <small>2 files: current categories and account sources; no date range needed</small>
                     </span>
                 </label>
             </div>
         </section>
 
         <section class="card">
-            <h3 class="section-title">Columns</h3>
-            <div class="grid-columns" style="grid-template-columns: 1fr 1fr 1fr;">
+            <h3 class="section-title">Transaction Columns</h3>
+            <div class="column-grid">
                 <label class="checkbox-label"><input type="checkbox" id="col-date" checked> Date</label>
                 <label class="checkbox-label"><input type="checkbox" id="col-desc" checked> Desc</label>
                 <label class="checkbox-label"><input type="checkbox" id="col-amount" checked> Amount</label>
@@ -98,41 +97,39 @@
             </div>
         </section>
 
-        <button id="export-btn" class="primary-btn">
-            Export Selected Data
-        </button>
-
-        <button id="debug-raw-btn" class="pill-btn" style="width:100%; margin-top:8px;"
-            title="Downloads the raw, unprocessed GraphQL responses from both transaction endpoints. Useful for diagnosing wrong/missing fields (e.g. categories) in the CSV export.">
-            🔧 Debug: Export Raw API JSON
-        </button>
+        <details class="advanced card">
+            <summary>Advanced</summary>
+            <label class="toggle-row" title="Uses Credit Karma's API for faster, deeper exports.">
+                <span>
+                    <strong>Use Fast API</strong>
+                    <small>Recommended</small>
+                </span>
+                <span class="toggle-switch">
+                    <input type="checkbox" id="useApiCheckbox" checked>
+                    <span class="slider"></span>
+                </span>
+            </label>
+            <button id="debug-raw-btn" class="secondary-btn"
+                title="Downloads raw GraphQL responses for troubleshooting.">
+                Export Raw Debug Data
+            </button>
+        </details>
     </main>
 
     <footer>
-        <div class="footer-section">
-            <h4>Analyze Your Data</h4>
-            <div class="footer-links">
-                <a href="https://www.creditkarma.com/networth/transactions" target="_blank">📊 Go to Transactions
-                    Page</a>
-                <a href="https://github.com/cbangera2/BudgetLens" target="_blank">📈 BudgetLens Web Dashboard</a>
-                <a href="https://themeasureofaplan.com/budget-tracking-tool/" target="_blank">📑 TMOAP Spreadsheet
-                    Tool</a>
-            </div>
+        <div class="footer-links">
+            <a href="https://github.com/cbangera2/BudgetLens" target="_blank">BudgetLens</a>
+            <a href="https://github.com/cbangera2/CreditKarmaExtractor" target="_blank">GitHub</a>
+            <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">Report an issue</a>
         </div>
-
-        <div class="footer-section">
-            <h4>Resources</h4>
-            <div class="footer-links">
-                <a href="https://github.com/cbangera2/CreditKarmaExtractor" target="_blank">📦 View on GitHub</a>
-                <a href="https://github.com/cbangera2/CreditKarmaExtractor/issues" target="_blank">🐛 Report an
-                    Issue</a>
-            </div>
-        </div>
-
         <div class="footer-meta">
-            <p>v2.2 • &copy; 2026 Chirag Bangera. Not affiliated with Credit Karma.</p>
+            <p>v2.2 • &copy; 2026 Chirag Bangera</p>
         </div>
     </footer>
+
+    <div class="action-bar">
+        <button id="export-btn" class="primary-btn">Export Selected Data</button>
+    </div>
 
     <script src="popup.js"></script>
 </body>
