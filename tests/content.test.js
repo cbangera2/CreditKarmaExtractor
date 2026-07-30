@@ -17,8 +17,11 @@ vm.runInContext(`${contentScript}\n;globalThis.testExports = {
     extractGraphHistory,
     convertGraphHistoryToCSV,
     graphDateToISO,
+    WEALTH_ACCOUNT_TYPES,
     parseFormattedBalance,
+    extractNetWorthSegmentRows,
     extractWealthAccountRows,
+    convertNetWorthBreakdownToCSV,
     convertWealthAccountsToCSV
 };`, context);
 
@@ -26,8 +29,11 @@ const {
     extractGraphHistory,
     convertGraphHistoryToCSV,
     graphDateToISO,
+    WEALTH_ACCOUNT_TYPES,
     parseFormattedBalance,
+    extractNetWorthSegmentRows,
     extractWealthAccountRows,
+    convertNetWorthBreakdownToCSV,
     convertWealthAccountsToCSV
 } = context.testExports;
 
@@ -105,6 +111,10 @@ test('graph CSV has stable headers and ISO dates', () => {
     );
 });
 
+test('current wealth snapshots request every account segment exposed by Credit Karma', () => {
+    assert.deepEqual(Array.from(WEALTH_ACCOUNT_TYPES), ['cash', 'investments', 'property']);
+});
+
 function formattedText(text) {
     return { spans: [{ text }] };
 }
@@ -129,6 +139,110 @@ function accountRow(label, balance, descriptor) {
         statusText: descriptor == null ? null : formattedText(descriptor)
     };
 }
+
+function composableText(id, text) {
+    return {
+        __typename: 'FabricComposableFormattedText',
+        composableId: id,
+        composableFormattedTextModel: formattedText(text)
+    };
+}
+
+function netWorthBreakdownResponse(cards) {
+    return {
+        data: {
+            prime: {
+                networth: {
+                    cards: cards.map(views => ({
+                        item: { composableRoot: { composableRootViews: views } }
+                    }))
+                }
+            }
+        }
+    };
+}
+
+test('net worth snapshot extracts ordered asset and debt segment totals', () => {
+    const data = netWorthBreakdownResponse([
+        [
+            composableText('cash-title', 'Cash'),
+            composableText('cash-count', '2 accounts'),
+            composableText('cash-value', '$1,200.50'),
+            composableText('investments-title', 'Investments'),
+            composableText('investments-count', '1 account'),
+            composableText('investments-value', '$8,000')
+        ],
+        [
+            composableText('property-title', 'Property'),
+            composableText('property-count', '1 asset'),
+            composableText('property-value', '$10,000')
+        ],
+        [
+            composableText('credit-cards-title', 'Credit cards'),
+            composableText('credit-cards-count', '3 accounts'),
+            composableText('credit-cards-value', '$500.25')
+        ],
+        [
+            composableText('loans-title', 'Loans'),
+            composableText('loans-count', '2 from your report'),
+            composableText('loans-value', '$2,500')
+        ]
+    ]);
+
+    const rows = extractNetWorthSegmentRows(data, new Date('2026-07-29T12:00:00.000Z'));
+
+    assert.deepEqual(JSON.parse(JSON.stringify(rows)), [
+        {
+            asOf: '2026-07-29T12:00:00.000Z',
+            section: 'assets',
+            segment: 'cash',
+            balance: 1200.5,
+            descriptor: '2 accounts'
+        },
+        {
+            asOf: '2026-07-29T12:00:00.000Z',
+            section: 'assets',
+            segment: 'investments',
+            balance: 8000,
+            descriptor: '1 account'
+        },
+        {
+            asOf: '2026-07-29T12:00:00.000Z',
+            section: 'assets',
+            segment: 'property',
+            balance: 10000,
+            descriptor: '1 asset'
+        },
+        {
+            asOf: '2026-07-29T12:00:00.000Z',
+            section: 'debts',
+            segment: 'creditCards',
+            balance: 500.25,
+            descriptor: '3 accounts'
+        },
+        {
+            asOf: '2026-07-29T12:00:00.000Z',
+            section: 'debts',
+            segment: 'loans',
+            balance: 2500,
+            descriptor: '2 from your report'
+        }
+    ]);
+});
+
+test('net worth breakdown CSV keeps section and stable segment identifiers', () => {
+    assert.equal(
+        convertNetWorthBreakdownToCSV([{
+            asOf: '2026-07-29T12:00:00.000Z',
+            section: 'debts',
+            segment: 'creditCards',
+            balance: 25.5,
+            descriptor: 'One "reported" account'
+        }]),
+        'As Of,Section,Segment,Balance,Descriptor\n' +
+        '"2026-07-29T12:00:00.000Z","debts","creditCards","25.5","One ""reported"" account"\n'
+    );
+});
 
 test('parseFormattedBalance handles formatted, numeric, and negative values', () => {
     assert.equal(parseFormattedBalance(formattedText('$1,234.56')), 1234.56);
@@ -181,7 +295,7 @@ test('account snapshots tolerate reordered fields, missing descriptors, and nega
 
     const rows = extractWealthAccountRows(
         data,
-        'investments',
+        'property',
         new Date('2026-07-22T16:00:00.000Z')
     );
 

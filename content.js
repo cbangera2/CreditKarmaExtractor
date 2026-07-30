@@ -15,6 +15,15 @@ const CONFIG = {
     ACCOUNT_L2_HASH: 'ae3d3cc725b67ede7ec9216518daf4c06695c583301d6749881a1a55a9c061f2'
 };
 
+const WEALTH_ACCOUNT_TYPES = Object.freeze(['cash', 'investments', 'property']);
+const NET_WORTH_SEGMENTS = Object.freeze({
+    cash: { label: 'Cash', section: 'assets', order: 0 },
+    investments: { label: 'Investments', section: 'assets', order: 1 },
+    property: { label: 'Property', section: 'assets', order: 2 },
+    creditCards: { label: 'Credit cards', section: 'debts', order: 3 },
+    loans: { label: 'Loans', section: 'debts', order: 4 }
+});
+
 // Cache for the access token
 let cachedAccessToken = null;
 
@@ -234,9 +243,74 @@ function parseFormattedBalance(value) {
 
 function formatSnapshotDate(date) {
     if (!date || typeof date.getTime !== 'function' || Number.isNaN(date.getTime())) {
-        throw new Error('Cannot export current account balances without a valid as-of date.');
+        throw new Error('Cannot export a current net worth snapshot without a valid as-of date.');
     }
     return date.toISOString();
+}
+
+function extractNetWorthSegmentRows(data, asOf = new Date()) {
+    const root = data?.data?.prime?.networth;
+    if (!root || typeof root !== 'object') {
+        throw new Error('Credit Karma did not return the current net worth breakdown. The API may have changed.');
+    }
+
+    const segmentByLabel = new Map(
+        Object.entries(NET_WORTH_SEGMENTS)
+            .map(([segment, metadata]) => [metadata.label.toLowerCase(), { segment, ...metadata }])
+    );
+    const asOfValue = formatSnapshotDate(asOf);
+    const rows = new Map();
+
+    for (const card of root.cards || []) {
+        const views = card?.item?.composableRoot?.composableRootViews;
+        if (!Array.isArray(views)) continue;
+
+        let currentRow = null;
+        const finishCurrentRow = () => {
+            if (currentRow && currentRow.balance !== null) {
+                rows.set(currentRow.segment, {
+                    asOf: asOfValue,
+                    section: currentRow.section,
+                    segment: currentRow.segment,
+                    balance: currentRow.balance,
+                    descriptor: currentRow.descriptors.join(' · ')
+                });
+            }
+            currentRow = null;
+        };
+
+        for (const view of views) {
+            if (view?.__typename !== 'FabricComposableFormattedText') continue;
+
+            const text = formattedTextValue(view.composableFormattedTextModel);
+            if (!text) continue;
+
+            const segment = segmentByLabel.get(text.toLowerCase());
+            if (segment) {
+                finishCurrentRow();
+                currentRow = {
+                    ...segment,
+                    balance: null,
+                    descriptors: []
+                };
+                continue;
+            }
+
+            if (!currentRow) continue;
+
+            const balance = parseFormattedBalance(text);
+            if (balance !== null && currentRow.balance === null) {
+                currentRow.balance = balance;
+            } else if (balance === null) {
+                currentRow.descriptors.push(text);
+            }
+        }
+
+        finishCurrentRow();
+    }
+
+    return Array.from(rows.values())
+        .sort((a, b) => NET_WORTH_SEGMENTS[a.segment].order - NET_WORTH_SEGMENTS[b.segment].order);
 }
 
 /**
@@ -375,20 +449,63 @@ async function fetchGraphHistory(type, startDate, endDate, signal) {
     );
 }
 
-async function fetchWealthAccountSnapshots(signal, asOf = new Date()) {
-    const accountTypes = ['cash', 'investments'];
-    const responses = await Promise.all(accountTypes.map(async accountType => ({
-        accountType,
-        data: await fetchPersistedQuery(
-            'getAccountL2Page',
-            CONFIG.ACCOUNT_L2_HASH,
-            { input: { accountType } },
-            signal
-        )
-    })));
+async function fetchNetWorthBreakdownSnapshot(signal, asOf = new Date()) {
+    const data = await fetchPersistedQuery(
+        'getNetworthPage',
+        CONFIG.NET_WORTH_HASH,
+        { input: { queryStringParameters: '' } },
+        signal
+    );
+    return extractNetWorthSegmentRows(data, asOf);
+}
 
-    return responses.flatMap(({ accountType, data }) =>
-        extractWealthAccountRows(data, accountType, asOf));
+async function fetchWealthAccountSnapshots(signal, asOf = new Date()) {
+    const results = await Promise.all(WEALTH_ACCOUNT_TYPES.map(async accountType => {
+        try {
+            const data = await fetchPersistedQuery(
+                'getAccountL2Page',
+                CONFIG.ACCOUNT_L2_HASH,
+                { input: { accountType } },
+                signal
+            );
+            return {
+                accountType,
+                rows: extractWealthAccountRows(data, accountType, asOf)
+            };
+        } catch (error) {
+            console.warn(`[API] Current ${accountType} balances were unavailable:`, error);
+            return { accountType, error };
+        }
+    }));
+
+    const successfulResults = results.filter(result => Array.isArray(result.rows));
+    if (successfulResults.length === 0) {
+        throw new Error('Credit Karma did not return any current wealth account balances.');
+    }
+
+    return successfulResults.flatMap(result => result.rows);
+}
+
+async function fetchCurrentWealthSnapshots(signal, asOf = new Date()) {
+    const [breakdownResult, accountsResult] = await Promise.allSettled([
+        fetchNetWorthBreakdownSnapshot(signal, asOf),
+        fetchWealthAccountSnapshots(signal, asOf)
+    ]);
+
+    if (breakdownResult.status === 'rejected') {
+        console.warn('[API] Current net worth breakdown was unavailable:', breakdownResult.reason);
+    }
+    if (accountsResult.status === 'rejected') {
+        console.warn('[API] Detailed current account balances were unavailable:', accountsResult.reason);
+    }
+    if (breakdownResult.status === 'rejected' && accountsResult.status === 'rejected') {
+        throw new Error('Credit Karma did not return any current net worth snapshot data.');
+    }
+
+    return {
+        breakdownRows: breakdownResult.status === 'fulfilled' ? breakdownResult.value : [],
+        accountRows: accountsResult.status === 'fulfilled' ? accountsResult.value : []
+    };
 }
 
 /**
@@ -1190,6 +1307,19 @@ function convertWealthAccountsToCSV(rows) {
     return `As Of,Account Type,Source Label,Balance,Descriptor\n${csvRows.join('')}`;
 }
 
+function convertNetWorthBreakdownToCSV(rows) {
+    const escape = value => String(value ?? '').replace(/"/g, '""');
+    const csvRows = rows.map(row => [
+        row.asOf,
+        row.section,
+        row.segment,
+        row.balance,
+        row.descriptor
+    ].map(value => `"${escape(value)}"`).join(',') + '\n');
+
+    return `As Of,Section,Segment,Balance,Descriptor\n${csvRows.join('')}`;
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -1665,31 +1795,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 let wealthAccountCount = 0;
+                let netWorthSegmentCount = 0;
                 if (csvTypes.wealthAccounts) {
                     const asOf = new Date();
-                    const wealthAccounts = await fetchWealthAccountSnapshots(undefined, asOf);
-                    wealthAccountCount = wealthAccounts.length;
-                    if (wealthAccountCount === 0) {
-                        console.warn('No current cash or investment account balances were found.');
+                    const { breakdownRows, accountRows } =
+                        await fetchCurrentWealthSnapshots(undefined, asOf);
+                    netWorthSegmentCount = breakdownRows.length;
+                    wealthAccountCount = accountRows.length;
+
+                    if (netWorthSegmentCount === 0) {
+                        console.warn('No current net worth segment balances were found.');
                     } else {
                         saveCSVToFile(
-                            convertWealthAccountsToCSV(wealthAccounts),
+                            convertNetWorthBreakdownToCSV(breakdownRows),
+                            `net_worth_breakdown_${asOf.toISOString().slice(0, 10)}.csv`
+                        );
+                    }
+
+                    if (wealthAccountCount === 0) {
+                        console.warn('No detailed current asset account balances were found.');
+                    } else {
+                        saveCSVToFile(
+                            convertWealthAccountsToCSV(accountRows),
                             `wealth_accounts_${asOf.toISOString().slice(0, 10)}.csv`
                         );
                     }
                 }
 
-                return { transactionCount: filteredTransactions.length, graphResults, wealthAccountCount };
+                return {
+                    transactionCount: filteredTransactions.length,
+                    graphResults,
+                    wealthAccountCount,
+                    netWorthSegmentCount
+                };
             };
 
-            exportData().then(({ transactionCount, graphResults, wealthAccountCount }) => {
+            exportData().then(({
+                transactionCount,
+                graphResults,
+                wealthAccountCount,
+                netWorthSegmentCount
+            }) => {
                 if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
 
                 const graphPointCount = graphResults.reduce((count, result) => count + result.history.length, 0);
                 const summaryParts = [];
                 if (needsTransactions) summaryParts.push(`${transactionCount} transactions`);
                 if (graphResults.length) summaryParts.push(`${graphPointCount} graph values`);
-                if (csvTypes.wealthAccounts) summaryParts.push(`${wealthAccountCount} current account balances`);
+                if (csvTypes.wealthAccounts) {
+                    summaryParts.push(`${netWorthSegmentCount} net worth segments`);
+                    summaryParts.push(`${wealthAccountCount} current account balances`);
+                }
 
                 // Show completion notification - moved to left side
                 const completionNotice = document.createElement('div');
