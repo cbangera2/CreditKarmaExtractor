@@ -15,6 +15,15 @@ const CONFIG = {
     ACCOUNT_L2_HASH: 'ae3d3cc725b67ede7ec9216518daf4c06695c583301d6749881a1a55a9c061f2'
 };
 
+const WEALTH_ACCOUNT_TYPES = Object.freeze(['cash', 'investments', 'property']);
+const NET_WORTH_SEGMENTS = Object.freeze({
+    cash: { label: 'Cash', section: 'assets', order: 0 },
+    investments: { label: 'Investments', section: 'assets', order: 1 },
+    property: { label: 'Property', section: 'assets', order: 2 },
+    creditCards: { label: 'Credit cards', section: 'debts', order: 3 },
+    loans: { label: 'Loans', section: 'debts', order: 4 }
+});
+
 // Cache for the access token
 let cachedAccessToken = null;
 
@@ -204,6 +213,172 @@ function formattedTextValue(formattedText) {
     return formattedText?.spans?.map(span => span.text || '').join('').trim() || '';
 }
 
+function viewTextValue(value) {
+    if (typeof value === 'string' || typeof value === 'number') {
+        return String(value).trim();
+    }
+    return formattedTextValue(value);
+}
+
+function parseFormattedBalance(value) {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+
+    const text = viewTextValue(value);
+    if (!text || text.includes('%')) return null;
+
+    const normalized = text
+        .replace(/[\u2212\u2012\u2013\u2014]/g, '-')
+        .replace(/\s/g, '');
+    const isNegative = /^\(.*\)$/.test(normalized) || normalized.includes('-');
+    const numericText = normalized.replace(/[(),+$¢£¥€-]/g, '');
+
+    if (!/^\d+(?:\.\d+)?$/.test(numericText)) return null;
+
+    const parsed = Number(numericText);
+    if (!Number.isFinite(parsed)) return null;
+    return isNegative ? -parsed : parsed;
+}
+
+function formatSnapshotDate(date) {
+    if (!date || typeof date.getTime !== 'function' || Number.isNaN(date.getTime())) {
+        throw new Error('Cannot export a current net worth snapshot without a valid as-of date.');
+    }
+    return date.toISOString();
+}
+
+function extractNetWorthSegmentRows(data, asOf = new Date()) {
+    const root = data?.data?.prime?.networth;
+    if (!root || typeof root !== 'object') {
+        throw new Error('Credit Karma did not return the current net worth breakdown. The API may have changed.');
+    }
+
+    const segmentByLabel = new Map(
+        Object.entries(NET_WORTH_SEGMENTS)
+            .map(([segment, metadata]) => [metadata.label.toLowerCase(), { segment, ...metadata }])
+    );
+    const asOfValue = formatSnapshotDate(asOf);
+    const rows = new Map();
+
+    for (const card of root.cards || []) {
+        const views = card?.item?.composableRoot?.composableRootViews;
+        if (!Array.isArray(views)) continue;
+
+        let currentRow = null;
+        const finishCurrentRow = () => {
+            if (currentRow && currentRow.balance !== null) {
+                rows.set(currentRow.segment, {
+                    asOf: asOfValue,
+                    section: currentRow.section,
+                    segment: currentRow.segment,
+                    balance: currentRow.balance,
+                    descriptor: currentRow.descriptors.join(' · ')
+                });
+            }
+            currentRow = null;
+        };
+
+        for (const view of views) {
+            if (view?.__typename !== 'FabricComposableFormattedText') continue;
+
+            const text = formattedTextValue(view.composableFormattedTextModel);
+            if (!text) continue;
+
+            const segment = segmentByLabel.get(text.toLowerCase());
+            if (segment) {
+                finishCurrentRow();
+                currentRow = {
+                    ...segment,
+                    balance: null,
+                    descriptors: []
+                };
+                continue;
+            }
+
+            if (!currentRow) continue;
+
+            const balance = parseFormattedBalance(text);
+            if (balance !== null && currentRow.balance === null) {
+                currentRow.balance = balance;
+            } else if (balance === null) {
+                currentRow.descriptors.push(text);
+            }
+        }
+
+        finishCurrentRow();
+    }
+
+    return Array.from(rows.values())
+        .sort((a, b) => NET_WORTH_SEGMENTS[a.segment].order - NET_WORTH_SEGMENTS[b.segment].order);
+}
+
+/**
+ * Extract current account/source balances from KPL row views. A row can be a
+ * direct view or be repeated below an experimentation view's lookalikeViews,
+ * so traverse the response and deduplicate exact account snapshots.
+ */
+function extractWealthAccountRows(data, accountType, asOf = new Date()) {
+    const root = data?.data?.prime?.networthByAccountType;
+    if (!root || typeof root !== 'object') {
+        throw new Error(`Credit Karma did not return current ${accountType} account balances. The API may have changed.`);
+    }
+
+    const rows = [];
+    const visited = new Set();
+    const asOfValue = formatSnapshotDate(asOf);
+
+    function visit(value) {
+        if (!value || typeof value !== 'object' || visited.has(value)) return;
+        visited.add(value);
+
+        if (!Array.isArray(value) && value.rowTitle && value.rowValue) {
+            const sourceLabel = viewTextValue(value.rowTitle);
+            const balance = parseFormattedBalance(value.rowValue);
+            const descriptor = viewTextValue(
+                value.statusText
+                || value.rowStatusDot?.statusDotText
+                || value.rowSubtitle
+                || value.rowSubTitle
+                || value.descriptor
+                || value.subTitle
+            );
+
+            if (sourceLabel && balance !== null) {
+                rows.push({
+                    asOf: asOfValue,
+                    accountType,
+                    sourceLabel,
+                    balance,
+                    descriptor
+                });
+            }
+        }
+
+        for (const child of Object.values(value)) {
+            visit(child);
+        }
+    }
+
+    visit(root);
+
+    const uniqueRows = new Map();
+    for (const row of rows) {
+        const key = [
+            row.accountType.toLowerCase(),
+            row.sourceLabel.toLowerCase(),
+            row.balance,
+            row.descriptor.toLowerCase()
+        ].join('\u0000');
+        if (!uniqueRows.has(key)) uniqueRows.set(key, row);
+    }
+
+    return Array.from(uniqueRows.values())
+        .sort((a, b) => a.accountType.localeCompare(b.accountType)
+            || a.sourceLabel.localeCompare(b.sourceLabel)
+            || a.balance - b.balance);
+}
+
 function graphDateToISO(dateLabel) {
     const parsedDate = new Date(dateLabel);
     if (Number.isNaN(parsedDate.getTime())) return null;
@@ -272,6 +447,69 @@ async function fetchGraphHistory(type, startDate, endDate, signal) {
         startDate,
         endDate
     );
+}
+
+async function fetchNetWorthBreakdownSnapshot(signal, asOf = new Date()) {
+    const data = await fetchPersistedQuery(
+        'getNetworthPage',
+        CONFIG.NET_WORTH_HASH,
+        { input: { queryStringParameters: '' } },
+        signal
+    );
+    return extractNetWorthSegmentRows(data, asOf);
+}
+
+async function fetchWealthAccountSnapshots(signal, asOf = new Date()) {
+    const results = await Promise.all(WEALTH_ACCOUNT_TYPES.map(async accountType => {
+        try {
+            const data = await fetchPersistedQuery(
+                'getAccountL2Page',
+                CONFIG.ACCOUNT_L2_HASH,
+                { input: { accountType } },
+                signal
+            );
+            return {
+                accountType,
+                rows: extractWealthAccountRows(data, accountType, asOf)
+            };
+        } catch (error) {
+            console.warn(`[API] Current ${accountType} balances were unavailable:`, error);
+            return { accountType, error };
+        }
+    }));
+
+    const successfulResults = results.filter(result => Array.isArray(result.rows));
+    if (successfulResults.length === 0) {
+        throw new Error('Credit Karma did not return any current wealth account balances.');
+    }
+
+    return successfulResults.flatMap(result => result.rows);
+}
+
+async function fetchCurrentWealthSnapshots(signal, asOf = new Date()) {
+    const [breakdownResult, accountsResult] = await Promise.allSettled([
+        fetchNetWorthBreakdownSnapshot(signal, asOf),
+        fetchWealthAccountSnapshots(signal, asOf)
+    ]);
+
+    if (breakdownResult.status === 'rejected') {
+        console.warn('[API] Current net worth breakdown was unavailable:', breakdownResult.reason);
+    }
+    if (accountsResult.status === 'rejected') {
+        console.warn('[API] Detailed current account balances were unavailable:', accountsResult.reason);
+    }
+    if (breakdownResult.status === 'rejected' && accountsResult.status === 'rejected') {
+        throw new Error('Credit Karma did not return any current net worth snapshot data.');
+    }
+
+    return {
+        breakdownRows: breakdownResult.status === 'fulfilled' ? breakdownResult.value : [],
+        accountRows: accountsResult.status === 'fulfilled' ? accountsResult.value : []
+    };
+}
+
+function shouldExportCurrentWealth(csvTypes) {
+    return Boolean(csvTypes?.budgetLensBundle || csvTypes?.netWorth || csvTypes?.wealthAccounts);
 }
 
 /**
@@ -1060,8 +1298,78 @@ function convertGraphHistoryToCSV(history, valueColumn) {
     return `Date,${valueColumn}\n${rows.join('')}`;
 }
 
+function convertWealthAccountsToCSV(rows) {
+    const escape = value => String(value ?? '').replace(/"/g, '""');
+    const csvRows = rows.map(row => [
+        row.asOf,
+        row.accountType,
+        row.sourceLabel,
+        row.balance,
+        row.descriptor
+    ].map(value => `"${escape(value)}"`).join(',') + '\n');
+
+    return `As Of,Account Type,Source Label,Balance,Descriptor\n${csvRows.join('')}`;
+}
+
+function convertNetWorthBreakdownToCSV(rows) {
+    const escape = value => String(value ?? '').replace(/"/g, '""');
+    const csvRows = rows.map(row => [
+        row.asOf,
+        row.section,
+        row.segment,
+        row.balance,
+        row.descriptor
+    ].map(value => `"${escape(value)}"`).join(',') + '\n');
+
+    return `As Of,Section,Segment,Balance,Descriptor\n${csvRows.join('')}`;
+}
+
+function buildBudgetLensBundle({
+    startDate,
+    endDate,
+    exportedAt,
+    transactions,
+    netWorthHistory,
+    investmentHistory,
+    netWorthBreakdown,
+    wealthAccounts
+}) {
+    return {
+        format: 'budgetlens',
+        version: 1,
+        exportedAt: exportedAt.toISOString(),
+        dateRange: { start: startDate, end: endDate },
+        transactions: transactions.map(transaction => ({
+            date: transaction.date,
+            description: transaction.description ?? '',
+            amount: transaction.amount,
+            category: transaction.category ?? null,
+            transactionType: transaction.transactionType ?? null,
+            accountName: transaction.accountName ?? null,
+            accountType: transaction.accountType ?? null,
+            provider: transaction.provider ?? null,
+            labels: Array.isArray(transaction.labels) ? transaction.labels : [],
+            notes: transaction.notes ?? null
+        })),
+        netWorthHistory,
+        investmentHistory,
+        netWorthBreakdown,
+        wealthAccounts
+    };
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
+    const link = document.createElement('a');
+    const objectUrl = window.URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = fileName;
+    link.click();
+    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
+}
+
+function saveJSONToFile(value, fileName) {
+    const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     const objectUrl = window.URL.createObjectURL(blob);
     link.href = objectUrl;
@@ -1447,8 +1755,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'captureTransactions') {
         try {
             const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
-            const needsTransactions = csvTypes.allTransactions || csvTypes.income || csvTypes.expenses;
-            console.log(`Received export request from ${startDate} to ${endDate}`);
+            const needsTransactions =
+                csvTypes.budgetLensBundle ||
+                csvTypes.allTransactions ||
+                csvTypes.income ||
+                csvTypes.expenses;
+            console.log(csvTypes.wealthAccounts
+                ? 'Received export request including current account balances'
+                : `Received export request from ${startDate} to ${endDate}`);
 
             // Create a visual indicator that extraction is in progress - moved to left side
             const indicator = document.createElement('div');
@@ -1501,18 +1815,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
 
                 const graphExports = [];
-                if (csvTypes.netWorth) {
+                if (csvTypes.netWorth || csvTypes.budgetLensBundle) {
                     graphExports.push({
                         type: 'netWorth',
                         fileName: `net_worth_${startDate}_to_${endDate}.csv`,
-                        valueColumn: 'Net Worth'
+                        valueColumn: 'Net Worth',
+                        saveCSV: csvTypes.netWorth
                     });
                 }
-                if (csvTypes.investments) {
+                if (csvTypes.investments || csvTypes.budgetLensBundle) {
                     graphExports.push({
                         type: 'investments',
                         fileName: `investments_${startDate}_to_${endDate}.csv`,
-                        valueColumn: 'Investment Value'
+                        valueColumn: 'Investment Value',
+                        saveCSV: csvTypes.investments
                     });
                 }
 
@@ -1526,22 +1842,90 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         console.warn(`No ${result.type} graph values found in the selected date range.`);
                         continue;
                     }
-                    saveCSVToFile(
-                        convertGraphHistoryToCSV(result.history, result.valueColumn),
-                        result.fileName
+                    if (result.saveCSV) {
+                        saveCSVToFile(
+                            convertGraphHistoryToCSV(result.history, result.valueColumn),
+                            result.fileName
+                        );
+                    }
+                }
+
+                let wealthAccountCount = 0;
+                let netWorthSegmentCount = 0;
+                let breakdownRows = [];
+                let accountRows = [];
+                if (shouldExportCurrentWealth(csvTypes)) {
+                    const asOf = new Date();
+                    ({ breakdownRows, accountRows } =
+                        await fetchCurrentWealthSnapshots(undefined, asOf));
+                    netWorthSegmentCount = breakdownRows.length;
+                    wealthAccountCount = accountRows.length;
+                    const saveSnapshotCSVs = csvTypes.netWorth || csvTypes.wealthAccounts;
+
+                    if (netWorthSegmentCount === 0) {
+                        console.warn('No current net worth segment balances were found.');
+                    } else if (saveSnapshotCSVs) {
+                        saveCSVToFile(
+                            convertNetWorthBreakdownToCSV(breakdownRows),
+                            `net_worth_breakdown_${asOf.toISOString().slice(0, 10)}.csv`
+                        );
+                    }
+
+                    if (wealthAccountCount === 0) {
+                        console.warn('No detailed current asset account balances were found.');
+                    } else if (saveSnapshotCSVs) {
+                        saveCSVToFile(
+                            convertWealthAccountsToCSV(accountRows),
+                            `wealth_accounts_${asOf.toISOString().slice(0, 10)}.csv`
+                        );
+                    }
+                }
+
+                if (csvTypes.budgetLensBundle) {
+                    const histories = new Map(
+                        graphResults.map(result => [result.type, result.history])
+                    );
+                    const bundle = buildBudgetLensBundle({
+                        startDate,
+                        endDate,
+                        exportedAt: new Date(),
+                        transactions: filteredTransactions,
+                        netWorthHistory: histories.get('netWorth') || [],
+                        investmentHistory: histories.get('investments') || [],
+                        netWorthBreakdown: breakdownRows,
+                        wealthAccounts: accountRows
+                    });
+                    saveJSONToFile(
+                        bundle,
+                        `budgetlens_${startDate}_to_${endDate}.json`
                     );
                 }
 
-                return { transactionCount: filteredTransactions.length, graphResults };
+                return {
+                    transactionCount: filteredTransactions.length,
+                    graphResults,
+                    wealthAccountCount,
+                    netWorthSegmentCount
+                };
             };
 
-            exportData().then(({ transactionCount, graphResults }) => {
+            exportData().then(({
+                transactionCount,
+                graphResults,
+                wealthAccountCount,
+                netWorthSegmentCount
+            }) => {
                 if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
 
                 const graphPointCount = graphResults.reduce((count, result) => count + result.history.length, 0);
                 const summaryParts = [];
                 if (needsTransactions) summaryParts.push(`${transactionCount} transactions`);
                 if (graphResults.length) summaryParts.push(`${graphPointCount} graph values`);
+                if (shouldExportCurrentWealth(csvTypes)) {
+                    summaryParts.push(`${netWorthSegmentCount} net worth segments`);
+                    summaryParts.push(`${wealthAccountCount} current account balances`);
+                }
+                if (csvTypes.budgetLensBundle) summaryParts.push('1 BudgetLens bundle');
 
                 // Show completion notification - moved to left side
                 const completionNotice = document.createElement('div');

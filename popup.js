@@ -114,25 +114,29 @@ document.getElementById('export-btn').addEventListener('click', () => {
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
 
-    if (!startDate || !endDate) {
-        alert('Please select both start and end dates.');
-        return;
-    }
-
     // Get Settings
     const useApi = document.getElementById('useApiCheckbox').checked;
 
     // Get File Types
     const csvTypes = {
+        budgetLensBundle: document.getElementById('budgetLensBundleCheckbox').checked,
         allTransactions: document.getElementById('allTransactionsCheckbox').checked,
         income: document.getElementById('incomeCheckbox').checked,
         expenses: document.getElementById('expensesCheckbox').checked,
         netWorth: document.getElementById('netWorthCheckbox').checked,
-        investments: document.getElementById('investmentsCheckbox').checked
+        investments: document.getElementById('investmentsCheckbox').checked,
+        wealthAccounts: document.getElementById('wealthAccountsCheckbox').checked
     };
 
     if (!Object.values(csvTypes).some(Boolean)) {
         alert('Please select at least one file to generate.');
+        return;
+    }
+
+    const needsDateRange = Object.entries(csvTypes)
+        .some(([type, selected]) => type !== 'wealthAccounts' && selected);
+    if (needsDateRange && (!startDate || !endDate)) {
+        alert('Please select both start and end dates.');
         return;
     }
 

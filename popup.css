@@ -26,8 +26,8 @@ body {
   color: var(--text);
   margin: 0;
   width: 380px;
-  padding: 12px;
-  /* Reduced padding */
+  min-height: 520px;
+  padding: 12px 12px 76px;
   transition: background-color 0.3s, color 0.3s;
   box-sizing: border-box;
 }
@@ -36,8 +36,7 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  /* Reduced margin */
+  margin-bottom: 10px;
 }
 
 h1 {
@@ -45,7 +44,12 @@ h1 {
   font-weight: 700;
   margin: 0;
   color: var(--primary);
-  /* Solid color instead of gradient for cleaner look */
+}
+
+.header-subtitle {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 10px;
 }
 
 .theme-toggle {
@@ -69,10 +73,8 @@ h1 {
 .card {
   background: var(--surface);
   border-radius: var(--radius);
-  padding: 12px;
-  /* Reduced padding */
-  margin-bottom: 12px;
-  /* Reduced margin */
+  padding: 10px;
+  margin-bottom: 8px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
 }
@@ -82,7 +84,7 @@ h1 {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-secondary);
-  margin: 0 0 8px 0;
+  margin: 0 0 7px;
   font-weight: 600;
 }
 
@@ -125,7 +127,7 @@ input[type="date"]:focus {
 .quick-dates {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 6px;
   flex-wrap: wrap;
 }
 
@@ -165,6 +167,49 @@ input[type="date"] {
   gap: 8px;
 }
 
+.transaction-options {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.bundle-option {
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+
+.bundle-option small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.wealth-options {
+  display: grid;
+  gap: 8px;
+}
+
+.group-label {
+  margin: 0 0 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.section-divider {
+  height: 1px;
+  margin: 9px 0;
+  background: var(--border);
+}
+
+.column-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px 4px;
+}
+
 .checkbox-label {
   display: flex;
   align-items: center;
@@ -180,6 +225,28 @@ input[type="date"] {
   border-radius: 3px;
   accent-color: var(--primary);
   margin: 0;
+}
+
+.checkbox-label-wide {
+  grid-column: 1 / -1;
+  align-items: flex-start;
+}
+
+.checkbox-label-wide small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.wealth-options small,
+.advanced small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 400;
 }
 
 /* Toggle Switch */
@@ -235,10 +302,22 @@ input:checked+.slider:before {
   transform: translateX(16px);
 }
 
-/* Button */
+/* Actions */
+.action-bar {
+  position: fixed;
+  z-index: 10;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.08);
+}
+
 .primary-btn {
   width: 100%;
-  padding: 12px;
+  padding: 11px;
   background: var(--primary);
   color: white;
   border: none;
@@ -264,38 +343,57 @@ input:checked+.slider:before {
   box-shadow: none;
 }
 
+.secondary-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.advanced {
+  padding: 0;
+}
+
+.advanced summary {
+  padding: 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.advanced[open] {
+  padding: 0 10px 10px;
+}
+
+.advanced[open] summary {
+  margin: 0 -10px 8px;
+}
+
 /* Footer */
 footer {
-  margin-top: 16px;
+  margin-top: 10px;
   border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-
-.footer-section {
-  margin-bottom: 12px;
-}
-
-.footer-section h4 {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin: 0 0 6px 0;
-  font-weight: 600;
+  padding-top: 9px;
 }
 
 .footer-links {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  justify-content: center;
+  gap: 12px;
 }
 
 .footer-links a {
   font-size: 11px;
   color: var(--primary);
   text-decoration: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .footer-links a:hover {
@@ -306,6 +404,10 @@ footer {
   font-size: 10px;
   color: var(--text-secondary);
   text-align: center;
-  margin-top: 8px;
+  margin-top: 7px;
   line-height: 1.4;
+}
+
+.footer-meta p {
+  margin: 0;
 }
