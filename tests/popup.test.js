@@ -8,7 +8,7 @@ const popupScript = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf
 
 function createPopupContext(savedStorage = {}) {
     const listeners = new Map();
-    const alerts = [];
+    let runtimeListener = null;
     const sentMessages = [];
     const checkboxIds = [
         'useApiCheckbox',
@@ -46,6 +46,8 @@ function createPopupContext(savedStorage = {}) {
     }
 
     element('theme-toggle');
+    element('status').hidden = true;
+    elements.get('status').dataset = {};
     element('start-date');
     element('end-date');
     element('export-btn');
@@ -77,10 +79,12 @@ function createPopupContext(savedStorage = {}) {
             getItem: key => savedStorage[key] ?? null,
             setItem(key, value) { savedStorage[key] = value; }
         },
-        alert: message => alerts.push(message),
         setTimeout: callback => callback(),
         chrome: {
-            runtime: { lastError: null },
+            runtime: {
+                lastError: null,
+                onMessage: { addListener(callback) { runtimeListener = callback; } }
+            },
             scripting: { executeScript() {} },
             tabs: {
                 query(_options, callback) {
@@ -96,16 +100,23 @@ function createPopupContext(savedStorage = {}) {
 
     vm.createContext(context);
     vm.runInContext(popupScript, context);
-    return { alerts, elements, listeners, sentMessages, savedStorage };
+    const status = () => {
+        const el = elements.get('status');
+        return el.hidden ? null : { text: el.textContent, kind: el.dataset.kind };
+    };
+    return {
+        context, elements, listeners, sentMessages, savedStorage, status,
+        sendRuntimeMessage: message => runtimeListener(message)
+    };
 }
 
 test('current wealth account snapshots can export without a historical date range', () => {
-    const { alerts, elements, listeners, sentMessages } = createPopupContext();
+    const { status, elements, listeners, sentMessages } = createPopupContext();
     elements.get('wealthAccountsCheckbox').checked = true;
 
     listeners.get('export-btn:click')();
 
-    assert.deepEqual(alerts, []);
+    assert.notEqual(status()?.kind, 'error');
     assert.equal(sentMessages.length, 1);
     assert.equal(sentMessages[0].csvTypes.wealthAccounts, true);
     assert.equal(sentMessages[0].startDate, '');
@@ -113,24 +124,25 @@ test('current wealth account snapshots can export without a historical date rang
 });
 
 test('historical exports still require both dates', () => {
-    const { alerts, elements, listeners, sentMessages } = createPopupContext();
+    const { status, elements, listeners, sentMessages } = createPopupContext();
     elements.get('netWorthCheckbox').checked = true;
 
     listeners.get('export-btn:click')();
 
-    assert.deepEqual(alerts, ['Please select both start and end dates.']);
+    assert.equal(status().text, 'Please select both start and end dates.');
+    assert.equal(status().kind, 'error');
     assert.deepEqual(sentMessages, []);
 });
 
 test('BudgetLens bundle is sent as a distinct export type', () => {
-    const { alerts, elements, listeners, sentMessages } = createPopupContext();
+    const { status, elements, listeners, sentMessages } = createPopupContext();
     elements.get('budgetLensBundleCheckbox').checked = true;
     elements.get('start-date').value = '2026-01-01';
     elements.get('end-date').value = '2026-07-30';
 
     listeners.get('export-btn:click')();
 
-    assert.deepEqual(alerts, []);
+    assert.notEqual(status()?.kind, 'error');
     assert.equal(sentMessages.length, 1);
     assert.equal(sentMessages[0].csvTypes.budgetLensBundle, true);
     assert.equal(sentMessages[0].csvTypes.allTransactions, false);
@@ -188,4 +200,84 @@ test('corrupt or partial saved settings fall back to the defaults', () => {
     const partial = createPopupContext({ settings: JSON.stringify({ 'col-date': 'yes', 'end-date': 5 }) });
     assert.equal(partial.elements.get('col-date').checked, true);
     assert.equal(partial.elements.get('end-date').value, '');
+});
+
+test('selecting no export shows an inline error instead of an alert', () => {
+    const { elements, listeners, sentMessages, status } = createPopupContext();
+    elements.get('budgetLensBundleCheckbox').checked = false;
+
+    listeners.get('export-btn:click')();
+
+    assert.equal(status().text, 'Please select at least one file to generate.');
+    assert.equal(status().kind, 'error');
+    assert.equal(sentMessages.length, 0);
+});
+
+test('export button stays disabled until the content script reports completion', () => {
+    const { elements, listeners, status, sendRuntimeMessage } = createPopupContext();
+    elements.get('wealthAccountsCheckbox').checked = true;
+
+    listeners.get('export-btn:click')();
+
+    assert.equal(elements.get('export-btn').disabled, true);
+    assert.equal(status().kind, 'info');
+
+    sendRuntimeMessage({ action: 'exportFinished', status: 'success', message: 'Export complete: 3 transactions.' });
+
+    assert.equal(elements.get('export-btn').disabled, false);
+    assert.equal(status().text, 'Export complete: 3 transactions.');
+    assert.equal(status().kind, 'success');
+});
+
+test('export failures reported by the content script are shown and re-enable the button', () => {
+    const { elements, listeners, status, sendRuntimeMessage } = createPopupContext();
+    elements.get('wealthAccountsCheckbox').checked = true;
+    listeners.get('export-btn:click')();
+
+    sendRuntimeMessage({ action: 'exportFinished', status: 'error', message: 'Error during data export: boom' });
+
+    assert.equal(elements.get('export-btn').disabled, false);
+    assert.equal(status().text, 'Error during data export: boom');
+    assert.equal(status().kind, 'error');
+});
+
+test('unrelated runtime messages are ignored', () => {
+    const { elements, listeners, status, sendRuntimeMessage } = createPopupContext();
+    elements.get('wealthAccountsCheckbox').checked = true;
+    listeners.get('export-btn:click')();
+
+    sendRuntimeMessage({ action: 'somethingElse' });
+
+    assert.equal(elements.get('export-btn').disabled, true);
+    assert.equal(status().kind, 'info');
+});
+
+test('quick date ranges cover the expected days', () => {
+    const { context } = createPopupContext();
+    const now = new Date(2026, 6, 30); // July 30, 2026
+    const range = name => {
+        const { start, end } = context.quickRangeValues(name, now);
+        return `${start}..${end}`;
+    };
+
+    assert.equal(range('last-30'), '2026-06-30..2026-07-30');
+    assert.equal(range('last-90'), '2026-05-01..2026-07-30');
+    assert.equal(range('ytd'), '2026-01-01..2026-07-30');
+    assert.equal(range('last-month'), '2026-06-01..2026-06-30');
+    assert.equal(range('last-year'), '2025-01-01..2025-12-31');
+});
+
+test('quick date ranges handle month and year boundaries', () => {
+    const { context } = createPopupContext();
+    const march = new Date(2026, 2, 1);
+    const january = new Date(2026, 0, 5);
+    const range = (name, now) => {
+        const { start, end } = context.quickRangeValues(name, now);
+        return `${start}..${end}`;
+    };
+
+    assert.equal(range('last-30', march), '2026-01-30..2026-03-01');
+    assert.equal(range('last-month', january), '2025-12-01..2025-12-31');
+    assert.equal(range('last-90', january), '2025-10-07..2026-01-05');
+    assert.equal(context.quickRangeValues('nonsense', march), null);
 });

@@ -21,7 +21,6 @@ test('every local file referenced by the manifest exists', () => {
     const referencedFiles = [
         manifest.action.default_popup,
         ...Object.values(manifest.action.default_icon),
-        manifest.background.service_worker,
         ...manifest.content_scripts.flatMap(contentScript => contentScript.js || [])
     ];
 
@@ -34,4 +33,8 @@ test('content scripts are limited to Credit Karma pages', () => {
     for (const contentScript of manifest.content_scripts) {
         assert.deepEqual(contentScript.matches, ['*://www.creditkarma.com/*']);
     }
+});
+
+test('manifest does not register a background service worker', () => {
+    assert.equal(manifest.background, undefined);
 });

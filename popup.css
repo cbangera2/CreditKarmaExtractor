@@ -372,6 +372,30 @@ input:checked+.slider:before {
   font: inherit;
 }
 
+.status {
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  max-height: 80px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.status[data-kind="error"] {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.status[data-kind="success"] {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
 .secondary-btn {
   width: 100%;
   margin-top: 10px;

@@ -34,7 +34,6 @@ jobs:
 
       - name: Check JavaScript syntax
         run: |
-          node --check background.js
           node --check content.js
           node --check popup.js
 
@@ -47,7 +46,7 @@ jobs:
             --format=zip \
             --output="${RUNNER_TEMP}/extension-test.zip" \
             HEAD -- \
-            manifest.json content.js background.js popup.html popup.css popup.js icon.png
+            manifest.json content.js popup.html popup.css popup.js icon.png
           unzip -t "${RUNNER_TEMP}/extension-test.zip"
 
   release:
@@ -100,7 +99,7 @@ jobs:
             --format=zip \
             --output="${ARCHIVE_NAME}" \
             HEAD -- \
-            manifest.json content.js background.js popup.html popup.css popup.js icon.png
+            manifest.json content.js popup.html popup.css popup.js icon.png
           unzip -t "${ARCHIVE_NAME}"
           sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
 

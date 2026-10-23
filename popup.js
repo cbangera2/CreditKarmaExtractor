@@ -103,37 +103,70 @@ for (const id of PERSISTED_VALUE_IDS) {
 }
 
 // Quick Date Logic
+function formatDateInput(date) {
+    // Format as YYYY-MM-DD using local time
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function quickRangeValues(range, now = new Date()) {
+    let start, end;
+
+    if (range === 'last-30' || range === 'last-90') {
+        const days = range === 'last-30' ? 30 : 90;
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+        end = now;
+    } else if (range === 'ytd') {
+        start = new Date(now.getFullYear(), 0, 1);
+        end = now;
+    } else if (range === 'last-month') {
+        start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        end = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else if (range === 'last-year') {
+        start = new Date(now.getFullYear() - 1, 0, 1);
+        end = new Date(now.getFullYear() - 1, 11, 31);
+    }
+
+    return start && end ? { start: formatDateInput(start), end: formatDateInput(end) } : null;
+}
+
 document.querySelectorAll('.pill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        const range = btn.dataset.range;
-        const now = new Date();
-        let start, end;
-
-        if (range === 'ytd') {
-            start = new Date(now.getFullYear(), 0, 1);
-            end = now;
-        } else if (range === 'last-month') {
-            start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            end = new Date(now.getFullYear(), now.getMonth(), 0);
-        } else if (range === 'last-year') {
-            start = new Date(now.getFullYear() - 1, 0, 1);
-            end = new Date(now.getFullYear() - 1, 11, 31);
-        }
-
-        if (start && end) {
-            // Format as YYYY-MM-DD using local time
-            const formatDate = (date) => {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
-            };
-            document.getElementById('start-date').value = formatDate(start);
-            document.getElementById('end-date').value = formatDate(end);
+        const values = quickRangeValues(btn.dataset.range);
+        if (values) {
+            document.getElementById('start-date').value = values.start;
+            document.getElementById('end-date').value = values.end;
             saveSettings();
         }
     });
 });
+
+// Inline status line (replaces alert() dialogs, which are jarring in an extension popup)
+const statusLine = document.getElementById('status');
+
+// The status line lives in the fixed action bar so it is always visible without scrolling.
+// Keep the page padding in step with the bar so no content is hidden underneath it.
+function syncActionBarPadding() {
+    const bar = document.getElementById('action-bar');
+    if (bar && document.body.style) {
+        document.body.style.paddingBottom = `${bar.offsetHeight + 12}px`;
+    }
+}
+
+function showStatus(message, kind = 'info') {
+    statusLine.textContent = message;
+    statusLine.dataset.kind = kind;
+    statusLine.hidden = false;
+    syncActionBarPadding();
+}
+
+function clearStatus() {
+    statusLine.textContent = '';
+    statusLine.hidden = true;
+    syncActionBarPadding();
+}
 
 /**
  * Send a message to the content script. If it doesn't answer (stale or missing
@@ -176,6 +209,7 @@ function sendMessageWithInjection(tab, message, callback) {
 
 // Debug: dump raw API responses to a JSON file
 document.getElementById('debug-raw-btn').addEventListener('click', () => {
+    clearStatus();
     const btn = document.getElementById('debug-raw-btn');
     const originalText = btn.textContent;
     btn.textContent = 'Dumping...';
@@ -183,16 +217,16 @@ document.getElementById('debug-raw-btn').addEventListener('click', () => {
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs[0]) {
-            alert('No active tab found.');
+            showStatus('No active tab found.', 'error');
             btn.textContent = originalText;
             btn.disabled = false;
             return;
         }
         sendMessageWithInjection(tabs[0], { action: 'debugDumpRaw', maxHubPages: 5 }, (response, error) => {
             if (error) {
-                alert(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`);
+                showStatus(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`, 'error');
             } else if (response?.status === 'error') {
-                alert(`Raw API dump failed: ${response.message}`);
+                showStatus(`Raw API dump failed: ${response.message}`, 'error');
             }
             btn.textContent = originalText;
             btn.disabled = false;
@@ -201,7 +235,23 @@ document.getElementById('debug-raw-btn').addEventListener('click', () => {
 });
 
 // Export Logic
+const exportBtn = document.getElementById('export-btn');
+const exportBtnText = exportBtn.textContent;
+
+function resetExportButton() {
+    exportBtn.textContent = exportBtnText;
+    exportBtn.disabled = false;
+}
+
+// The content script reports back when an export finishes (or fails)
+chrome.runtime.onMessage?.addListener(message => {
+    if (message?.action !== 'exportFinished') return;
+    showStatus(message.message, message.status === 'success' ? 'success' : 'error');
+    resetExportButton();
+});
+
 document.getElementById('export-btn').addEventListener('click', () => {
+    clearStatus();
     const startDate = document.getElementById('start-date').value;
     const endDate = document.getElementById('end-date').value;
 
@@ -220,14 +270,14 @@ document.getElementById('export-btn').addEventListener('click', () => {
     };
 
     if (!Object.values(csvTypes).some(Boolean)) {
-        alert('Please select at least one file to generate.');
+        showStatus('Please select at least one file to generate.', 'error');
         return;
     }
 
     const needsDateRange = Object.entries(csvTypes)
         .some(([type, selected]) => type !== 'wealthAccounts' && selected);
     if (needsDateRange && (!startDate || !endDate)) {
-        alert('Please select both start and end dates.');
+        showStatus('Please select both start and end dates.', 'error');
         return;
     }
 
@@ -244,16 +294,14 @@ document.getElementById('export-btn').addEventListener('click', () => {
     };
 
     // UI Feedback
-    const exportBtn = document.getElementById('export-btn');
-    const originalText = exportBtn.textContent;
     exportBtn.textContent = 'Processing...';
     exportBtn.disabled = true;
 
     // Send to Content Script
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (!tabs[0]) {
-            alert('No active tab found.');
-            resetButton();
+            showStatus('No active tab found.', 'error');
+            resetExportButton();
             return;
         }
 
@@ -270,22 +318,18 @@ document.getElementById('export-btn').addEventListener('click', () => {
             // Handle error (e.g. content script not loaded)
             if (error) {
                 console.error(error);
-                alert(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`);
-                resetButton();
+                showStatus(`Connection error (${error}): Make sure you are on creditkarma.com and reload the page.`, 'error');
+                resetExportButton();
                 return;
             }
 
             if (response && response.status === 'started') {
-                // Keep button disabled for a bit to prevent double clicks
-                setTimeout(resetButton, 3000);
+                // Stay disabled until the content script reports the export finished
+                showStatus('Exporting... keep this Credit Karma tab open.');
             } else {
-                resetButton();
+                if (response?.status === 'error') showStatus(response.message, 'error');
+                resetExportButton();
             }
         });
     });
-
-    function resetButton() {
-        exportBtn.textContent = originalText;
-        exportBtn.disabled = false;
-    }
 });
