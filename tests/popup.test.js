@@ -157,3 +157,35 @@ test('custom file names are remembered and restored', () => {
     assert.equal(second.elements.get('name-netWorth').value, 'nw');
     assert.equal(second.elements.get('name-income').value, '');
 });
+
+test('popup settings are saved when changed and restored on the next open', () => {
+    const first = createPopupContext();
+    first.elements.get('start-date').value = '2026-01-01';
+    first.listeners.get('start-date:change')();
+    first.elements.get('budgetLensBundleCheckbox').checked = false;
+    first.elements.get('netWorthCheckbox').checked = true;
+    first.listeners.get('netWorthCheckbox:change')();
+    first.elements.get('col-notes').checked = false;
+    first.listeners.get('col-notes:change')();
+    first.elements.get('useApiCheckbox').checked = false;
+    first.listeners.get('useApiCheckbox:change')();
+
+    const second = createPopupContext(first.savedStorage);
+
+    assert.equal(second.elements.get('start-date').value, '2026-01-01');
+    assert.equal(second.elements.get('netWorthCheckbox').checked, true);
+    assert.equal(second.elements.get('budgetLensBundleCheckbox').checked, false);
+    assert.equal(second.elements.get('col-notes').checked, false);
+    assert.equal(second.elements.get('col-date').checked, true);
+    assert.equal(second.elements.get('useApiCheckbox').checked, false);
+});
+
+test('corrupt or partial saved settings fall back to the defaults', () => {
+    const corrupt = createPopupContext({ settings: '{not json' });
+    assert.equal(corrupt.elements.get('col-date').checked, true);
+    assert.equal(corrupt.elements.get('start-date').value, '');
+
+    const partial = createPopupContext({ settings: JSON.stringify({ 'col-date': 'yes', 'end-date': 5 }) });
+    assert.equal(partial.elements.get('col-date').checked, true);
+    assert.equal(partial.elements.get('end-date').value, '');
+});

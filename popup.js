@@ -50,6 +50,58 @@ for (const key of FILE_NAME_KEYS) {
     });
 }
 
+// Remember the date range, export choices, columns, and Fast API setting between sessions
+const PERSISTED_CHECKBOX_IDS = [
+    'budgetLensBundleCheckbox',
+    'allTransactionsCheckbox',
+    'incomeCheckbox',
+    'expensesCheckbox',
+    'netWorthCheckbox',
+    'investmentsCheckbox',
+    'wealthAccountsCheckbox',
+    'useApiCheckbox',
+    'col-date',
+    'col-desc',
+    'col-amount',
+    'col-category',
+    'col-type',
+    'col-account',
+    'col-notes',
+    'col-labels'
+];
+const PERSISTED_VALUE_IDS = ['start-date', 'end-date'];
+
+function readSavedSettings() {
+    try {
+        return JSON.parse(localStorage.getItem('settings')) || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveSettings() {
+    const settings = {};
+    for (const id of PERSISTED_CHECKBOX_IDS) {
+        settings[id] = document.getElementById(id).checked;
+    }
+    for (const id of PERSISTED_VALUE_IDS) {
+        settings[id] = document.getElementById(id).value;
+    }
+    localStorage.setItem('settings', JSON.stringify(settings));
+}
+
+const savedSettings = readSavedSettings();
+for (const id of PERSISTED_CHECKBOX_IDS) {
+    const input = document.getElementById(id);
+    if (typeof savedSettings[id] === 'boolean') input.checked = savedSettings[id];
+    input.addEventListener('change', saveSettings);
+}
+for (const id of PERSISTED_VALUE_IDS) {
+    const input = document.getElementById(id);
+    if (typeof savedSettings[id] === 'string') input.value = savedSettings[id];
+    input.addEventListener('change', saveSettings);
+}
+
 // Quick Date Logic
 document.querySelectorAll('.pill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -78,6 +130,7 @@ document.querySelectorAll('.pill-btn').forEach(btn => {
             };
             document.getElementById('start-date').value = formatDate(start);
             document.getElementById('end-date').value = formatDate(end);
+            saveSettings();
         }
     });
 });
