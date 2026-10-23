@@ -9,7 +9,6 @@ Thanks for helping improve Credit Karma Data Extractor.
 3. Run the local checks:
 
    ```sh
-   node --check background.js
    node --check content.js
    node --check popup.js
    node --test
@@ -47,8 +46,10 @@ If you accidentally publish a HAR containing sensitive information, remove it im
 - Structure the description with these sections:
   - **Summary**: what changed and why, plus the issue it relates to (use `Closes #N` only when it fully resolves the issue).
   - **Validation**: the checks you ran, and anything you did not test, such as a live export on Credit Karma.
-  - **Screenshots**: for popup or other UI changes. `gh pr create --attach` uploads them.
+  - **Screenshots**: required for any change to the popup or other UI. `gh pr create --attach` uploads them.
+- If you improve the extension in a fork or on a local copy, please open a pull request upstream so everyone benefits.
 - Keep changes focused and avoid unrelated formatting edits.
 - Add or update tests when changing parsers or export formats.
 - Do not include real Credit Karma data in tests; use small synthetic fixtures.
 - Ensure CI passes before requesting review.
+- Pull requests are squash merged, so the pull request title becomes the commit message on `main`.

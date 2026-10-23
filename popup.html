@@ -35,6 +35,8 @@
                 </div>
             </div>
             <div class="quick-dates">
+                <button class="pill-btn" data-range="last-30">Last 30 Days</button>
+                <button class="pill-btn" data-range="last-90">Last 90 Days</button>
                 <button class="pill-btn" data-range="ytd">YTD</button>
                 <button class="pill-btn" data-range="last-month">Last Month</button>
                 <button class="pill-btn" data-range="last-year">Last Year</button>
@@ -174,7 +176,8 @@
         </div>
     </footer>
 
-    <div class="action-bar">
+    <div class="action-bar" id="action-bar">
+        <p id="status" class="status" role="status" aria-live="polite" hidden></p>
         <button id="export-btn" class="primary-btn">Export Selected Data</button>
     </div>
 

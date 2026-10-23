@@ -25,7 +25,8 @@ vm.runInContext(`${contentScript}\n;globalThis.testExports = {
     convertWealthAccountsToCSV,
     shouldExportCurrentWealth,
     buildBudgetLensBundle,
-    buildExportFileName
+    buildExportFileName,
+    convertToCSV
 };`, context);
 
 const {
@@ -40,7 +41,8 @@ const {
     convertWealthAccountsToCSV,
     shouldExportCurrentWealth,
     buildBudgetLensBundle,
-    buildExportFileName
+    buildExportFileName,
+    convertToCSV
 } = context.testExports;
 
 function point(date, value) {
@@ -420,4 +422,59 @@ test('custom file names are sanitized', () => {
     assert.equal(buildExportFileName('income', 'csv', 'd', { income: '../a/b:c*.CSV' }), 'abc.csv');
     assert.equal(buildExportFileName('income', 'csv', 'd', { income: '  ' }), 'income_d.csv');
     assert.equal(buildExportFileName('income', 'csv', 'd', { income: '...' }), 'income_d.csv');
+});
+
+test('transaction CSV includes the header and quotes every field', () => {
+    const csv = convertToCSV([{
+        date: '2026-07-04',
+        description: 'Coffee',
+        amount: '4.50',
+        category: 'Dining',
+        transactionType: 'debit',
+        accountName: 'Checking',
+        accountType: 'Bank',
+        provider: 'Example Bank'
+    }]);
+
+    assert.equal(csv.split('\n')[0],
+        'Date,Description,Amount,Category,Transaction Type,Account Name,Account Type,Provider,Labels,Notes');
+    assert.equal(csv.split('\n')[1],
+        '"07/04/2026","Coffee","4.50","Dining","debit","Checking","Bank","Example Bank","",""');
+});
+
+test('transaction CSV keeps commas, quotes, and newlines inside a single quoted field', () => {
+    const csv = convertToCSV([{
+        date: '2026-07-04',
+        description: 'Smith, John "JJ" Cafe\nDowntown',
+        amount: '1.00',
+        category: 'A, B',
+        transactionType: 'debit'
+    }], { date: true, description: true, amount: true, category: true });
+
+    assert.equal(
+        csv,
+        'Date,Description,Amount,Category\n"07/04/2026","Smith, John ""JJ"" Cafe\nDowntown","1.00","A, B"\n'
+    );
+});
+
+test('transaction CSV only includes the selected columns', () => {
+    const csv = convertToCSV([{
+        date: '2026-07-04',
+        description: 'Coffee',
+        amount: '4.50',
+        category: 'Dining',
+        transactionType: 'debit'
+    }], { date: true, amount: true });
+
+    assert.equal(csv, 'Date,Amount\n"07/04/2026","4.50"\n');
+});
+
+test('transaction CSV leaves missing optional fields empty and handles no transactions', () => {
+    const csv = convertToCSV([{ date: '2026-07-04', amount: '1', transactionType: 'credit' }]);
+
+    assert.equal(csv.split('\n')[1], '"07/04/2026","","1","","credit","","","","",""');
+    assert.equal(
+        convertToCSV([], { date: true, amount: true }),
+        'Date,Amount\n'
+    );
 });

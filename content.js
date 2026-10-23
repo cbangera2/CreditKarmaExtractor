@@ -1394,6 +1394,20 @@ function buildExportFileName(key, extension, dateSuffix, customNames = {}) {
         : `${DEFAULT_EXPORT_BASE_NAMES[key]}_${dateSuffix}.${extension}`;
 }
 
+/**
+ * Tell the popup (if it is still open) that an export finished or failed.
+ * Nothing is listening once the popup closes, so a missing receiver is ignored.
+ */
+function notifyExportFinished(status, message) {
+    try {
+        chrome.runtime.sendMessage({ action: 'exportFinished', status, message }, () => {
+            void chrome.runtime.lastError;
+        });
+    } catch (error) {
+        // Extension context invalidated or no receiver; nothing to do.
+    }
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -1977,7 +1991,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 completionNotice.style.borderRadius = '5px';
                 completionNotice.style.zIndex = '9999';
                 completionNotice.style.fontSize = '14px';
-                completionNotice.textContent = `Export complete: ${summaryParts.join(' and ')}.`;
+                const completionMessage = `Export complete: ${summaryParts.join(' and ')}.`;
+                completionNotice.textContent = completionMessage;
+                notifyExportFinished('success', completionMessage);
                 document.body.appendChild(completionNotice);
 
                 setTimeout(() => {
@@ -1990,6 +2006,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                 console.error('Error during data export:', error);
                 alert(`Error during data export: ${error.message}`);
+                notifyExportFinished('error', `Error during data export: ${error.message}`);
             });
 
         } catch (error) {
