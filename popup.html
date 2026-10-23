@@ -119,6 +119,42 @@
                     <span class="slider"></span>
                 </span>
             </label>
+            <div class="file-names">
+                <strong>Custom file names</strong>
+                <small>Optional. Leave blank for the default dated name; the extension is added for you.</small>
+                <label class="file-name-row" for="name-allTransactions">
+                    <span>All Transactions</span>
+                    <input type="text" id="name-allTransactions" placeholder="all_transactions_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-income">
+                    <span>Income</span>
+                    <input type="text" id="name-income" placeholder="income_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-expenses">
+                    <span>Expenses</span>
+                    <input type="text" id="name-expenses" placeholder="expenses_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-netWorth">
+                    <span>Net Worth History</span>
+                    <input type="text" id="name-netWorth" placeholder="net_worth_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-investments">
+                    <span>Investment History</span>
+                    <input type="text" id="name-investments" placeholder="investments_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-netWorthBreakdown">
+                    <span>Net Worth Categories</span>
+                    <input type="text" id="name-netWorthBreakdown" placeholder="net_worth_breakdown_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-wealthAccounts">
+                    <span>Account Sources</span>
+                    <input type="text" id="name-wealthAccounts" placeholder="wealth_accounts_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+                <label class="file-name-row" for="name-budgetLensBundle">
+                    <span>BudgetLens Bundle</span>
+                    <input type="text" id="name-budgetLensBundle" placeholder="budgetlens_&lt;dates&gt;" maxlength="100" autocomplete="off">
+                </label>
+            </div>
             <button id="debug-raw-btn" class="secondary-btn"
                 title="Downloads raw GraphQL responses for troubleshooting.">
                 Export Raw Debug Data

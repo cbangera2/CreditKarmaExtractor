@@ -1358,6 +1358,42 @@ function buildBudgetLensBundle({
     };
 }
 
+const DEFAULT_EXPORT_BASE_NAMES = {
+    allTransactions: 'all_transactions',
+    income: 'income',
+    expenses: 'expenses',
+    netWorth: 'net_worth',
+    investments: 'investments',
+    netWorthBreakdown: 'net_worth_breakdown',
+    wealthAccounts: 'wealth_accounts',
+    budgetLensBundle: 'budgetlens'
+};
+
+/**
+ * Clean a user-supplied file name: drop path separators and characters that
+ * are invalid in file names, and any trailing .csv/.json the user typed.
+ */
+function sanitizeCustomFileName(name) {
+    return String(name ?? '')
+        .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '')
+        .trim()
+        .replace(/\.(csv|json)$/i, '')
+        .replace(/^\.+/, '')
+        .slice(0, 100)
+        .trim();
+}
+
+/**
+ * Build an export file name. A custom name for the export key is used as-is;
+ * otherwise the default name gets a date suffix.
+ */
+function buildExportFileName(key, extension, dateSuffix, customNames = {}) {
+    const custom = sanitizeCustomFileName(customNames?.[key]);
+    return custom
+        ? `${custom}.${extension}`
+        : `${DEFAULT_EXPORT_BASE_NAMES[key]}_${dateSuffix}.${extension}`;
+}
+
 function saveCSVToFile(csvData, fileName) {
     const blob = new Blob([csvData], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -1754,7 +1790,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     if (request.action === 'captureTransactions') {
         try {
-            const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns } = request;
+            const { startDate, endDate, csvTypes, fetchAccountNames = false, useApi = true, columns, fileNames = {} } = request;
+            const rangeSuffix = `${startDate}_to_${endDate}`;
+            const fileName = (key, extension, dateSuffix = rangeSuffix) =>
+                buildExportFileName(key, extension, dateSuffix, fileNames);
             const needsTransactions =
                 csvTypes.budgetLensBundle ||
                 csvTypes.allTransactions ||
@@ -1798,19 +1837,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 } else {
                     if (csvTypes.allTransactions) {
                         const allCsvData = convertToCSV(filteredTransactions, columns);
-                        saveCSVToFile(allCsvData, `all_transactions_${startDate}_to_${endDate}.csv`);
+                        saveCSVToFile(allCsvData, fileName('allTransactions', 'csv'));
                     }
 
                     if (csvTypes.income) {
                         const creditTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'credit');
                         const creditCsvData = convertToCSV(creditTransactions, columns);
-                        saveCSVToFile(creditCsvData, `income_${startDate}_to_${endDate}.csv`);
+                        saveCSVToFile(creditCsvData, fileName('income', 'csv'));
                     }
 
                     if (csvTypes.expenses) {
                         const debitTransactions = filteredTransactions.filter(transaction => transaction.transactionType === 'debit');
                         const debitCsvData = convertToCSV(debitTransactions, columns);
-                        saveCSVToFile(debitCsvData, `expenses_${startDate}_to_${endDate}.csv`);
+                        saveCSVToFile(debitCsvData, fileName('expenses', 'csv'));
                     }
                 }
 
@@ -1818,7 +1857,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (csvTypes.netWorth || csvTypes.budgetLensBundle) {
                     graphExports.push({
                         type: 'netWorth',
-                        fileName: `net_worth_${startDate}_to_${endDate}.csv`,
+                        fileName: fileName('netWorth', 'csv'),
                         valueColumn: 'Net Worth',
                         saveCSV: csvTypes.netWorth
                     });
@@ -1826,7 +1865,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (csvTypes.investments || csvTypes.budgetLensBundle) {
                     graphExports.push({
                         type: 'investments',
-                        fileName: `investments_${startDate}_to_${endDate}.csv`,
+                        fileName: fileName('investments', 'csv'),
                         valueColumn: 'Investment Value',
                         saveCSV: csvTypes.investments
                     });
@@ -1867,7 +1906,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     } else if (saveSnapshotCSVs) {
                         saveCSVToFile(
                             convertNetWorthBreakdownToCSV(breakdownRows),
-                            `net_worth_breakdown_${asOf.toISOString().slice(0, 10)}.csv`
+                            fileName('netWorthBreakdown', 'csv', asOf.toISOString().slice(0, 10))
                         );
                     }
 
@@ -1876,7 +1915,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     } else if (saveSnapshotCSVs) {
                         saveCSVToFile(
                             convertWealthAccountsToCSV(accountRows),
-                            `wealth_accounts_${asOf.toISOString().slice(0, 10)}.csv`
+                            fileName('wealthAccounts', 'csv', asOf.toISOString().slice(0, 10))
                         );
                     }
                 }
@@ -1897,7 +1936,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     });
                     saveJSONToFile(
                         bundle,
-                        `budgetlens_${startDate}_to_${endDate}.json`
+                        fileName('budgetLensBundle', 'json')
                     );
                 }
 

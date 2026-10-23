@@ -20,6 +20,7 @@ The **Credit Karma Data Extractor** exports transaction history, net worth histo
 - **Instant Stop**: Cancel huge extractions immediately without losing data—what you've fetched is saved.
 - **Smart Export**: Automatically generates `All Data`, `Income Only`, and `Expenses Only` files.
 - **One-File BudgetLens Export**: The default BudgetLens Bundle combines transactions, both wealth histories, the current five-category breakdown, and available account sources in one versioned JSON file.
+- **Custom File Names**: Optional Advanced setting to name each export file yourself (for example `transactions.csv` or `net_worth.csv`). Names are remembered, and blank fields keep the default dated names.
 - **Wealth History**: Export the full Net Worth and Investment graph series as separate, date-filtered CSV files.
 - **Current Net Worth Breakdown**: Export current Cash, Investments, Property, Credit cards, and Loans totals to `net_worth_breakdown_<date>.csv`, plus available cash, investment, and property source balances to `wealth_accounts_<date>.csv`. These snapshots are not filtered by the selected historical date range.
 

@@ -12,6 +12,44 @@ themeToggle.addEventListener('click', () => {
     localStorage.setItem('theme', newTheme);
 });
 
+// Custom file names (blank = default dated name), remembered between sessions
+const FILE_NAME_KEYS = [
+    'allTransactions',
+    'income',
+    'expenses',
+    'netWorth',
+    'investments',
+    'netWorthBreakdown',
+    'wealthAccounts',
+    'budgetLensBundle'
+];
+
+function readSavedFileNames() {
+    try {
+        return JSON.parse(localStorage.getItem('fileNames')) || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function collectFileNames() {
+    const fileNames = {};
+    for (const key of FILE_NAME_KEYS) {
+        const value = document.getElementById(`name-${key}`).value.trim();
+        if (value) fileNames[key] = value;
+    }
+    return fileNames;
+}
+
+const savedFileNames = readSavedFileNames();
+for (const key of FILE_NAME_KEYS) {
+    const input = document.getElementById(`name-${key}`);
+    input.value = savedFileNames[key] || '';
+    input.addEventListener('input', () => {
+        localStorage.setItem('fileNames', JSON.stringify(collectFileNames()));
+    });
+}
+
 // Quick Date Logic
 document.querySelectorAll('.pill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -173,7 +211,8 @@ document.getElementById('export-btn').addEventListener('click', () => {
             useApi,
             fetchAccountNames: false, // Legacy override
             csvTypes,
-            columns
+            columns,
+            fileNames: collectFileNames()
         }, (response, error) => {
             // Handle error (e.g. content script not loaded)
             if (error) {

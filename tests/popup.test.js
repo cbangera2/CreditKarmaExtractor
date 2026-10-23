@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const popupScript = fs.readFileSync(path.join(__dirname, '..', 'popup.js'), 'utf8');
 
-function createPopupContext() {
+function createPopupContext(savedStorage = {}) {
     const listeners = new Map();
     const alerts = [];
     const sentMessages = [];
@@ -51,6 +51,10 @@ function createPopupContext() {
     element('export-btn');
     element('debug-raw-btn');
     for (const id of checkboxIds) element(id);
+    for (const key of [
+        'allTransactions', 'income', 'expenses', 'netWorth', 'investments',
+        'netWorthBreakdown', 'wealthAccounts', 'budgetLensBundle'
+    ]) element(`name-${key}`);
     elements.get('useApiCheckbox').checked = true;
     for (const id of checkboxIds.filter(id => id.startsWith('col-'))) {
         elements.get(id).checked = true;
@@ -70,8 +74,8 @@ function createPopupContext() {
             querySelectorAll: () => []
         },
         localStorage: {
-            getItem: () => null,
-            setItem() {}
+            getItem: key => savedStorage[key] ?? null,
+            setItem(key, value) { savedStorage[key] = value; }
         },
         alert: message => alerts.push(message),
         setTimeout: callback => callback(),
@@ -92,7 +96,7 @@ function createPopupContext() {
 
     vm.createContext(context);
     vm.runInContext(popupScript, context);
-    return { alerts, elements, listeners, sentMessages };
+    return { alerts, elements, listeners, sentMessages, savedStorage };
 }
 
 test('current wealth account snapshots can export without a historical date range', () => {
@@ -130,4 +134,26 @@ test('BudgetLens bundle is sent as a distinct export type', () => {
     assert.equal(sentMessages.length, 1);
     assert.equal(sentMessages[0].csvTypes.budgetLensBundle, true);
     assert.equal(sentMessages[0].csvTypes.allTransactions, false);
+});
+
+test('custom file names are sent, trimmed, and blank names are omitted', () => {
+    const { elements, listeners, sentMessages } = createPopupContext();
+    elements.get('name-allTransactions').value = '  my_transactions ';
+    elements.get('name-income').value = '   ';
+    elements.get('wealthAccountsCheckbox').checked = true;
+
+    listeners.get('export-btn:click')();
+
+    assert.equal(JSON.stringify(sentMessages[0].fileNames), JSON.stringify({ allTransactions: 'my_transactions' }));
+});
+
+test('custom file names are remembered and restored', () => {
+    const first = createPopupContext();
+    first.elements.get('name-netWorth').value = 'nw';
+    first.listeners.get('name-netWorth:input')();
+    assert.equal(first.savedStorage.fileNames, JSON.stringify({ netWorth: 'nw' }));
+
+    const second = createPopupContext(first.savedStorage);
+    assert.equal(second.elements.get('name-netWorth').value, 'nw');
+    assert.equal(second.elements.get('name-income').value, '');
 });
