@@ -12,6 +12,96 @@ themeToggle.addEventListener('click', () => {
     localStorage.setItem('theme', newTheme);
 });
 
+// Custom file names (blank = default dated name), remembered between sessions
+const FILE_NAME_KEYS = [
+    'allTransactions',
+    'income',
+    'expenses',
+    'netWorth',
+    'investments',
+    'netWorthBreakdown',
+    'wealthAccounts',
+    'budgetLensBundle'
+];
+
+function readSavedFileNames() {
+    try {
+        return JSON.parse(localStorage.getItem('fileNames')) || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function collectFileNames() {
+    const fileNames = {};
+    for (const key of FILE_NAME_KEYS) {
+        const value = document.getElementById(`name-${key}`).value.trim();
+        if (value) fileNames[key] = value;
+    }
+    return fileNames;
+}
+
+const savedFileNames = readSavedFileNames();
+for (const key of FILE_NAME_KEYS) {
+    const input = document.getElementById(`name-${key}`);
+    input.value = savedFileNames[key] || '';
+    input.addEventListener('input', () => {
+        localStorage.setItem('fileNames', JSON.stringify(collectFileNames()));
+    });
+}
+
+// Remember the date range, export choices, columns, and Fast API setting between sessions
+const PERSISTED_CHECKBOX_IDS = [
+    'budgetLensBundleCheckbox',
+    'allTransactionsCheckbox',
+    'incomeCheckbox',
+    'expensesCheckbox',
+    'netWorthCheckbox',
+    'investmentsCheckbox',
+    'wealthAccountsCheckbox',
+    'useApiCheckbox',
+    'col-date',
+    'col-desc',
+    'col-amount',
+    'col-category',
+    'col-type',
+    'col-account',
+    'col-notes',
+    'col-labels'
+];
+const PERSISTED_VALUE_IDS = ['start-date', 'end-date'];
+
+function readSavedSettings() {
+    try {
+        return JSON.parse(localStorage.getItem('settings')) || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveSettings() {
+    const settings = {};
+    for (const id of PERSISTED_CHECKBOX_IDS) {
+        settings[id] = document.getElementById(id).checked;
+    }
+    for (const id of PERSISTED_VALUE_IDS) {
+        settings[id] = document.getElementById(id).value;
+    }
+    localStorage.setItem('settings', JSON.stringify(settings));
+}
+
+const savedSettings = readSavedSettings();
+for (const id of PERSISTED_CHECKBOX_IDS) {
+    const input = document.getElementById(id);
+    if (typeof savedSettings[id] === 'boolean') input.checked = savedSettings[id];
+    input.addEventListener('change', saveSettings);
+}
+for (const id of PERSISTED_VALUE_IDS) {
+    const input = document.getElementById(id);
+    if (typeof savedSettings[id] === 'string') input.value = savedSettings[id];
+    input.addEventListener('change', saveSettings);
+}
+
 // Quick Date Logic
 document.querySelectorAll('.pill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -40,6 +130,7 @@ document.querySelectorAll('.pill-btn').forEach(btn => {
             };
             document.getElementById('start-date').value = formatDate(start);
             document.getElementById('end-date').value = formatDate(end);
+            saveSettings();
         }
     });
 });
@@ -173,7 +264,8 @@ document.getElementById('export-btn').addEventListener('click', () => {
             useApi,
             fetchAccountNames: false, // Legacy override
             csvTypes,
-            columns
+            columns,
+            fileNames: collectFileNames()
         }, (response, error) => {
             // Handle error (e.g. content script not loaded)
             if (error) {

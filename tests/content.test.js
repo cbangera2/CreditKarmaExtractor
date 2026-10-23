@@ -24,7 +24,8 @@ vm.runInContext(`${contentScript}\n;globalThis.testExports = {
     convertNetWorthBreakdownToCSV,
     convertWealthAccountsToCSV,
     shouldExportCurrentWealth,
-    buildBudgetLensBundle
+    buildBudgetLensBundle,
+    buildExportFileName
 };`, context);
 
 const {
@@ -38,7 +39,8 @@ const {
     convertNetWorthBreakdownToCSV,
     convertWealthAccountsToCSV,
     shouldExportCurrentWealth,
-    buildBudgetLensBundle
+    buildBudgetLensBundle,
+    buildExportFileName
 } = context.testExports;
 
 function point(date, value) {
@@ -396,4 +398,26 @@ test('account CSV uses stable columns and escapes text without changing numeric 
         'As Of,Account Type,Source Label,Balance,Descriptor\n' +
         '"2026-07-22T15:30:00.000Z","investments","Brokerage ""A""","-25.5","Manual"\n'
     );
+});
+
+test('export file names default to a dated name', () => {
+    assert.equal(
+        buildExportFileName('allTransactions', 'csv', '2026-01-01_to_2026-07-30'),
+        'all_transactions_2026-01-01_to_2026-07-30.csv'
+    );
+    assert.equal(
+        buildExportFileName('netWorthBreakdown', 'csv', '2026-07-30', { income: 'x' }),
+        'net_worth_breakdown_2026-07-30.csv'
+    );
+});
+
+test('custom export file names replace the default and get the right extension', () => {
+    assert.equal(buildExportFileName('income', 'csv', 'ignored', { income: 'salary' }), 'salary.csv');
+    assert.equal(buildExportFileName('budgetLensBundle', 'json', 'ignored', { budgetLensBundle: 'bl.json' }), 'bl.json');
+});
+
+test('custom file names are sanitized', () => {
+    assert.equal(buildExportFileName('income', 'csv', 'd', { income: '../a/b:c*.CSV' }), 'abc.csv');
+    assert.equal(buildExportFileName('income', 'csv', 'd', { income: '  ' }), 'income_d.csv');
+    assert.equal(buildExportFileName('income', 'csv', 'd', { income: '...' }), 'income_d.csv');
 });

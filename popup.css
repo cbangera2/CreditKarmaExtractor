@@ -343,6 +343,35 @@ input:checked+.slider:before {
   box-shadow: none;
 }
 
+.file-names {
+  margin-top: 12px;
+  font-size: 11px;
+}
+
+.file-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.file-name-row span {
+  flex: 0 0 120px;
+  color: var(--text-secondary);
+}
+
+.file-name-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
 .secondary-btn {
   width: 100%;
   margin-top: 10px;
